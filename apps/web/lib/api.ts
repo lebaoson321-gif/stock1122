@@ -33,6 +33,9 @@ export const api = {
   syncStock: (symbol: string, years = 5) =>
     request<SyncResult>(`/api/stocks/${symbol}/sync?years=${years}`, { method: "POST" }),
 
+  syncDefaults: (years = 5) =>
+    request<SyncResult[]>(`/api/stocks/sync-defaults?years=${years}`, { method: "POST" }),
+
   getHistory: (symbol: string) => request<PricePoint[]>(`/api/stocks/${symbol}/history`),
 
   getAnalysis: (symbol: string) => request<AnalysisResponse>(`/api/stocks/${symbol}/analysis`),

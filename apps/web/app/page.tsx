@@ -1,4 +1,5 @@
 import SearchBar from "@/components/SearchBar";
+import StockList from "@/components/StockList";
 
 export default function HomePage() {
   return (
@@ -11,12 +12,14 @@ export default function HomePage() {
         <SearchBar />
       </div>
 
+      <StockList />
+
       <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-5 text-sm text-neutral-400">
         Đăng nhập và mở trang{" "}
         <a href="/watchlist" className="text-emerald-400 underline">
           Watchlist
         </a>{" "}
-        để lưu danh sách mã theo dõi.
+        để lưu danh sách mã theo dõi riêng.
       </div>
     </div>
   );

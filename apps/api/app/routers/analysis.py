@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models.indicator import TechnicalIndicator
 from app.models.price import PriceHistory
+from app.models.score import StockScore
 from app.routers.common import get_stock_or_404
-from app.schemas.stock import AnalysisResponse, ScorePlaceholder
+from app.schemas.stock import AnalysisResponse, ScorePlaceholder, ScoreResponse
 
 router = APIRouter(prefix="/api/stocks", tags=["analysis"])
 
@@ -64,10 +65,27 @@ def get_analysis(symbol: str, db: Session = Depends(get_db)):
     )
 
 
-@router.get("/{symbol}/score", response_model=ScorePlaceholder)
+@router.get("/{symbol}/score", response_model=ScoreResponse | ScorePlaceholder)
 def get_score(symbol: str, db: Session = Depends(get_db)):
-    """Analysis Engine (trend/liquidity/volatility scoring) — PHASE 2,
-    chưa triển khai. Trả placeholder thay vì 404 để frontend phân biệt
-    được "chưa có module" với "mã không tồn tại"."""
+    """Điểm chấm cổ phiếu (Analysis Engine): xu hướng/thanh khoản/biến
+    động, tính lại mỗi lần sync (xem app/analysis/scoring.py). Trả
+    placeholder (available=False) thay vì 404 nếu mã tồn tại nhưng chưa
+    từng được chấm điểm — để frontend phân biệt "chưa tính" với "lỗi"."""
     stock = get_stock_or_404(db, symbol)
-    return ScorePlaceholder(symbol=stock.symbol)
+    score = db.execute(
+        select(StockScore)
+        .where(StockScore.stock_id == stock.id)
+        .order_by(StockScore.score_date.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+    if score is None:
+        return ScorePlaceholder(symbol=stock.symbol)
+
+    return ScoreResponse(
+        symbol=stock.symbol, date=score.score_date,
+        trend_score=float(score.trend_score) if score.trend_score is not None else None,
+        liquidity_score=float(score.liquidity_score) if score.liquidity_score is not None else None,
+        volatility_score=float(score.volatility_score) if score.volatility_score is not None else None,
+        total_score=float(score.total_score) if score.total_score is not None else None,
+    )

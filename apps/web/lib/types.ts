@@ -49,11 +49,23 @@ export interface SyncResult {
   message: string;
 }
 
+export interface ScoreResponse {
+  symbol: string;
+  available: true;
+  date: string;
+  trend_score: number | null;
+  liquidity_score: number | null;
+  volatility_score: number | null;
+  total_score: number | null;
+}
+
 export interface ScorePlaceholder {
   symbol: string;
   available: false;
   message: string;
 }
+
+export type ScoreResult = ScoreResponse | ScorePlaceholder;
 
 export interface PredictionPlaceholder {
   symbol: string;

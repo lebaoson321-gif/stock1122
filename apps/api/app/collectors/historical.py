@@ -1,12 +1,14 @@
 """
 Orchestrate: MarketDataProvider -> normalize -> upsert stocks/price_history
--> recompute_indicators. Dùng chung bởi router sync thủ công
-(routers/sync.py) và scheduler job (scheduler.py) — không viết lặp 2 nơi.
+-> recompute_indicators -> recompute_score. Dùng chung bởi router sync
+thủ công (routers/sync.py) và scheduler job (scheduler.py) — không viết
+lặp 2 nơi.
 """
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from app.analysis.scoring import recompute_score
 from app.collectors.base import MarketDataProvider
 from app.models.price import PriceHistory
 from app.models.stock import Stock
@@ -67,6 +69,7 @@ def sync_stock_history(db: Session, provider: MarketDataProvider, symbol: str, y
     db.commit()
 
     recompute_indicators(db, stock.id)
+    recompute_score(db, stock.id)
     return len(records)
 
 

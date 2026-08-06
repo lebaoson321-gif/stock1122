@@ -54,13 +54,24 @@ class SyncResult(BaseModel):
     message: str
 
 
+class ScoreResponse(BaseModel):
+    symbol: str
+    available: bool = True
+    date: date_type
+    trend_score: Optional[float] = None
+    liquidity_score: Optional[float] = None
+    volatility_score: Optional[float] = None
+    total_score: Optional[float] = None
+
+
 class ScorePlaceholder(BaseModel):
-    """Analysis Engine chưa triển khai — endpoint trả placeholder này
-    thay vì 404, để frontend phân biệt được "chưa có module" với "lỗi"."""
+    """Mã đã có dữ liệu giá nhưng chưa từng được chấm điểm (VD: sync lần
+    cuối trước khi tính năng này ra mắt) — gọi lại POST /sync để tính
+    điểm, hoặc đợi lần sync định kỳ tiếp theo."""
 
     symbol: str
     available: bool = False
-    message: str = "Analysis Engine chưa được triển khai (phase 2)."
+    message: str = "Chưa có điểm chấm cho mã này — gọi POST /sync để tính lại."
 
 
 class PredictionPlaceholder(BaseModel):

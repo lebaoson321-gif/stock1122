@@ -7,7 +7,7 @@ import { MacdPanel, RsiPanel } from "@/components/IndicatorPanel";
 import ScoreCard from "@/components/ScoreCard";
 import WatchlistButton from "@/components/WatchlistButton";
 import { api } from "@/lib/api";
-import type { AnalysisResponse, PricePoint } from "@/lib/types";
+import type { AnalysisResponse, PricePoint, ScoreResult } from "@/lib/types";
 
 type Status = "loading" | "ready" | "error";
 
@@ -36,6 +36,9 @@ export default function StockPage({ params }: { params: { symbol: string } }) {
 
   const [history, setHistory] = useState<PricePoint[] | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
+  const [score, setScore] = useState<ScoreResult>({
+    symbol, available: false, message: "Đang tải…",
+  });
   const [status, setStatus] = useState<Status>("loading");
   const [errorMsg, setErrorMsg] = useState("");
   const [retryKey, setRetryKey] = useState(0);
@@ -55,6 +58,22 @@ export default function StockPage({ params }: { params: { symbol: string } }) {
         if (cancelled) return;
         setErrorMsg(e.message || "Lỗi không xác định");
         setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [symbol, retryKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    // Điểm chấm là dữ liệu bổ sung — không chặn trang chính nếu lỗi/chưa có.
+    api
+      .getScore(symbol)
+      .then((s) => {
+        if (!cancelled) setScore(s);
+      })
+      .catch(() => {
+        if (!cancelled) setScore({ symbol, available: false, message: "Không tải được điểm chấm." });
       });
     return () => {
       cancelled = true;
@@ -155,7 +174,7 @@ export default function StockPage({ params }: { params: { symbol: string } }) {
           </div>
         </div>
 
-        <ScoreCard />
+        <ScoreCard score={score} />
       </div>
     </div>
   );

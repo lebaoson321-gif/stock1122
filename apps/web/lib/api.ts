@@ -5,7 +5,7 @@ import type {
   AnalysisResponse,
   PredictionPlaceholder,
   PricePoint,
-  ScorePlaceholder,
+  ScoreResult,
   StockSummary,
   SyncResult,
   WatchlistOut,
@@ -40,7 +40,7 @@ export const api = {
 
   getAnalysis: (symbol: string) => request<AnalysisResponse>(`/api/stocks/${symbol}/analysis`),
 
-  getScore: (symbol: string) => request<ScorePlaceholder>(`/api/stocks/${symbol}/score`),
+  getScore: (symbol: string) => request<ScoreResult>(`/api/stocks/${symbol}/score`),
 
   getPrediction: (symbol: string) => request<PredictionPlaceholder>(`/api/stocks/${symbol}/prediction`),
 

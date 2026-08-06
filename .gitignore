@@ -1,14 +1,22 @@
 # Python
-backend/venv/
-backend/__pycache__/
-backend/app/__pycache__/
+**/venv/
+**/__pycache__/
 *.pyc
-backend/app/stock_data.db
-realtime-poller/venv/
+**/stock_data.db
+.pytest_cache/
 
 # Node
-frontend/node_modules/
-frontend/dist/
+**/node_modules/
+**/dist/
+apps/web/.next/
+apps/web/out/
+
+# Env files (never commit real secrets)
+.env
+.env.local
+**/.env
+**/.env.local
+!**/.env.example
 
 # vnstock tự tạo file này (nhắm vào AI agent) mỗi khi import — không commit
 AGENTS.md

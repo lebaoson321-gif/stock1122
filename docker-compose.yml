@@ -1,20 +1,63 @@
+# Chạy toàn bộ nền tảng cục bộ KHÔNG cần Supabase — dùng Postgres local
+# thay thế, tiện cho dev. Khi deploy thật, DATABASE_URL/DIRECT_URL trỏ
+# vào Supabase (xem README phần Supabase), không dùng compose này.
+#
+# Lưu ý: để đơn giản, service `api` ở đây kết nối Postgres bằng role
+# `postgres` (chủ sở hữu bảng) cho cả migration lẫn runtime — nghĩa là
+# RLS trên watchlists/watchlist_items KHÔNG thực sự được enforce qua
+# đường này (Postgres bỏ qua RLS cho table owner). Đây là đánh đổi có
+# chủ đích để `docker compose up` chạy được ngay không cần thêm bước
+# thủ công. Xem apps/api/README.md mục "app_backend role" để biết cách
+# test RLS thật (dùng role riêng, không phải owner) — bắt buộc phải làm
+# đúng vậy khi deploy lên Supabase thật.
 services:
-  backend:
-    build: ./backend
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: stock_intelligence
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./apps/api/docker/init-local-auth-schema.sql:/docker-entrypoint-initdb.d/init-local-auth-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./apps/api
     ports:
       - "8000:8000"
     volumes:
-      - ./backend/app:/app/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-
-  frontend:
-    build: ./frontend
-    ports:
-      - "5173:5173"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      - ./apps/api/app:/app/app
     environment:
-      - VITE_API_BASE_URL=http://localhost:8000
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/stock_intelligence
+      DIRECT_URL: postgresql+psycopg://postgres:postgres@postgres:5432/stock_intelligence
+      CORS_ALLOW_ORIGINS: '["http://localhost:3000"]'
+      RUN_SCHEDULER: "false"
     depends_on:
-      - backend
+      postgres:
+        condition: service_healthy
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  web:
+    build: ./apps/web
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:

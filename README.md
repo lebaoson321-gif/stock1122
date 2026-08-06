@@ -1,112 +1,164 @@
-# Stock Intelligence & Analysis Platform — Full-stack
+# Stock Intelligence Platform
 
-Backend FastAPI + Frontend React (Vite), theo đúng kiến trúc trong tài liệu
-gốc (mục 9, Giai đoạn 2–3).
+Nền tảng thu thập, lưu trữ, phân tích và (tương lai) dự đoán dữ liệu
+chứng khoán HOSE. Đây là bản viết lại hoàn toàn từ MVP ban đầu (giờ ở
+`legacy/`), theo kiến trúc dài hạn: Next.js + FastAPI + Supabase Postgres.
+
+## Kiến trúc
+
+```mermaid
+flowchart LR
+    subgraph Client
+        Web["apps/web — Next.js<br/>(Vercel)"]
+    end
+    subgraph Backend
+        API["apps/api — FastAPI<br/>(service: api, N instance)"]
+        Worker["apps/api — FastAPI<br/>(service: worker, 1 instance,<br/>RUN_SCHEDULER=true)"]
+    end
+    subgraph Data
+        DB[(Supabase Postgres)]
+        Auth[Supabase Auth]
+    end
+    VNStock[vnstock<br/>không chính thức]
+
+    Web -- REST + JWT --> API
+    Web -- đăng nhập --> Auth
+    API --> DB
+    Worker -- sync định kỳ --> VNStock
+    Worker --> DB
+    AI["services/ai<br/>(scaffold, chưa wiring)"] -.-> DB
+```
 
 ```
 .
-├── backend/            FastAPI — API dữ liệu, chỉ báo kỹ thuật
-├── frontend/           React (Vite) — dashboard giao diện
-├── realtime-poller/    Script độc lập, poll giá khớp lệnh mỗi 60s, in ra console
-├── run.sh              Chạy đồng thời backend + frontend bằng một lệnh (không cần Docker)
-└── docker-compose.yml  Chạy đồng thời backend + frontend bằng Docker
+├── apps/
+│   ├── api/            FastAPI + SQLAlchemy + Alembic — backend chính
+│   └── web/              Next.js (App Router) + TypeScript + Tailwind — dashboard
+├── services/
+│   └── ai/                 AI Module (XGBoost/Random Forest/LSTM) — SCAFFOLD, chưa train model thật
+├── legacy/                   MVP cũ (SQLite + React/Vite) — đã đóng băng, chỉ để tham khảo
+└── docker-compose.yml          Chạy cục bộ (Postgres local, không cần Supabase)
 ```
 
-## Chạy nhanh — 1 lệnh (khuyên dùng)
+Chi tiết từng phần: [`apps/api/README.md`](apps/api/README.md),
+[`apps/web/README.md`](apps/web/README.md), [`services/ai/README.md`](services/ai/README.md).
 
-```bash
-./run.sh
-```
-
-Script này tự tạo virtualenv backend, cài `requirements.txt`, cài
-`node_modules` (npm install) nếu chưa có, rồi chạy song song:
-- Backend: http://localhost:8000 (Swagger docs tại `/docs`)
-- Frontend: http://localhost:5173
-
-Nhấn `Ctrl+C` để dừng cả hai.
-
-## Chạy bằng Docker Compose
+## Chạy nhanh cục bộ (không cần Supabase)
 
 ```bash
 docker compose up --build
 ```
 
-Chạy cả backend (uvicorn, có `--reload`) và frontend (vite dev server) trong
-container, mount code từ máy vào container nên sửa code vẫn tự reload như
-chạy trực tiếp. Cùng địa chỉ như trên: backend `:8000`, frontend `:5173`.
-`Ctrl+C` để dừng, hoặc `docker compose down`.
+- Backend: http://localhost:8000/docs
+- Frontend: http://localhost:3000
 
-Database SQLite của backend (`backend/app/stock_data.db`) được mount từ
-`backend/app/` trên máy nên dữ liệu vẫn còn sau khi tắt container.
+Dùng Postgres local (tự chạy migration khi container `api` khởi động),
+không cần tạo Supabase project để xem giao diện/chạy thử API. **Lưu ý**:
+theo cách này, RLS trên watchlist không thực sự được enforce (xem
+`apps/api/README.md` mục "app_backend role") và Supabase Auth (đăng
+nhập) sẽ không hoạt động nếu bạn không điền `NEXT_PUBLIC_SUPABASE_URL`/
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` — cần Supabase project thật cho phần đó.
 
-## Chạy thủ công (2 terminal)
+## Chạy thủ công (không Docker)
 
 ```bash
 # Terminal 1 — backend
-cd backend
-python3 -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
+cd apps/api
+python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env   # điền DATABASE_URL/DIRECT_URL — xem "Tạo Supabase project" bên dưới
+alembic upgrade head
 uvicorn app.main:app --reload --port 8000
 
 # Terminal 2 — frontend
-cd frontend
+cd apps/web
 npm install
+cp .env.example .env.local
 npm run dev
 ```
 
-Frontend chạy sẵn với dữ liệu mô phỏng nên bạn xem được giao diện đầy đủ
-ngay cả khi chưa bật backend. Xem `frontend/README.md` để nối dữ liệu thật.
+## Tạo Supabase project (bắt buộc để chạy thật)
 
-## Realtime poller (tuỳ chọn)
+1. Vào [supabase.com](https://supabase.com) → New Project. Ghi lại mật
+   khẩu database bạn đặt lúc tạo (cần cho connection string).
+2. **Lấy connection string** — Project Settings → Database → Connection
+   string:
+   - Chọn **Transaction pooler** (port 6543) → đây là `DATABASE_URL`.
+   - Chọn **Session pooler** (port 5432, tương thích IPv4) → đây là
+     `DIRECT_URL` (dùng cho Alembic). Không dùng "Direct connection"
+     trừ khi máy/CI bạn chắc chắn có IPv6 — Supabase mặc định port
+     5432 "direct" chỉ IPv6.
+3. **Lấy API keys** — Project Settings → API: `Project URL` (→
+   `SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_URL`), `anon public` key (→
+   `NEXT_PUBLIC_SUPABASE_ANON_KEY`).
+4. **Kiểm tra kiểu JWT** — Project Settings → Authentication → JWT Keys:
+   nếu thấy "Legacy JWT Secret" là kiểu bạn đang dùng (HS256), copy vào
+   `SUPABASE_JWT_SECRET`. Project mới thường ký bất đối xứng — để trống
+   biến này, backend tự dùng JWKS.
+5. Chạy migration: `cd apps/api && alembic upgrade head` (dùng
+   `DIRECT_URL`, cấu hình tự động qua `alembic/env.py`).
+6. **Đặt password cho role `app_backend`** (migration tự tạo role này
+   nhưng KHÔNG đặt password — không để password trong version control):
+   mở Supabase Dashboard → SQL Editor, chạy:
+   ```sql
+   ALTER ROLE app_backend WITH PASSWORD '<mật khẩu mạnh>';
+   ```
+   rồi dùng `app_backend`/mật khẩu đó trong `DATABASE_URL` (không phải
+   `postgres` — xem giải thích trong `apps/api/README.md`, đây là điều
+   kiện bắt buộc để RLS trên watchlist thực sự có tác dụng).
+7. Bật Email auth (mặc định đã bật) ở Authentication → Providers nếu
+   muốn test đăng nhập ngay, không cần cấu hình OAuth provider nào khác.
 
-Script độc lập, poll giá khớp lệnh mỗi 60 giây cho các mã đã có trong DB
-và in ra console — không ghi DB, không cần backend đang chạy:
+## Trạng thái từng module
 
-```bash
-cd realtime-poller
-pip install -r requirements.txt
-python poller.py
-```
-
-Cần backend đã `POST /sync` ít nhất một mã trước đó. Xem
-`realtime-poller/README.md` để biết chi tiết.
-
-## Trạng thái từng phần (đã kiểm tra lại)
-
-| Phần | Trạng thái |
+| Module | Trạng thái |
 |---|---|
-| Backend — cài dependency, khởi động server, DB SQLite | Đã chạy thử thành công (`/api/health`, `/api/stocks`) |
-| Backend — tính chỉ báo kỹ thuật (MA/RSI/MACD) | Đã test kỹ bằng dữ liệu giả lập, logic đúng |
-| Backend — fetch dữ liệu HOSE (vnstock) | Đã sửa 1 lỗi (xem bên dưới); fetch giá đã chạy được, cần bạn tự xác nhận trên máy có internet thật |
-| Frontend — cài dependency, `npm run dev` / `npm run build` | Đã chạy thử thành công |
-| Frontend — giao diện dashboard | Hoàn chỉnh, chạy được ngay với dữ liệu mô phỏng |
-| Frontend — nối API thật | Đã chuẩn bị sẵn `api.js`, cần bạn nối tay theo hướng dẫn |
-| Realtime poller — đọc DB, vòng lặp poll | Đã chạy thử thành công (đọc DB rỗng và có dữ liệu, xử lý lỗi mạng đúng) |
-| Realtime poller — dữ liệu giá khớp lệnh thật (`price_board`) | Chưa xác nhận được (sandbox chặn mạng, giống phần fetch dữ liệu HOSE ở trên) — cần bạn chạy thử trên máy |
-| AI Prediction (Module 5) | Chưa làm — hiện là công thức giả lập, không phải model thật |
+| Data Collection — lịch sử giá qua vnstock | Đã port + fix lỗi `source="TCBS"` từ MVP cũ, đã test cấu trúc dữ liệu; **chưa xác nhận được dữ liệu thật** (sandbox dev bị chặn mạng ra vnstock) — cần bạn tự chạy `POST /sync` trên máy có internet |
+| Data Collection — realtime price board | Tương tự — đã port từ `legacy/realtime-poller`, cùng giới hạn xác nhận |
+| Data Collection — scheduler định kỳ | Đã cài đặt (APScheduler, advisory lock chống double-run, `data_sync_log`), đã test cục bộ: job chạy đúng giờ VN, lock hoạt động đúng, log ghi đúng khi lỗi |
+| Data Storage — schema Postgres, upsert chống trùng | Đã test đầy đủ trên Postgres thật (migration, composite index, upsert idempotent) |
+| Data Storage — RLS watchlist | Đã test đầy đủ — xác nhận RLS thực sự chặn được truy vấn cross-user khi dùng đúng role `app_backend` |
+| Data Processing — MA/EMA/RSI/MACD/Bollinger | Đã test trên Postgres thật với dữ liệu giả lập, kết quả đúng |
+| Analysis Engine (chấm điểm xu hướng/thanh khoản/biến động) | **Chưa triển khai** — endpoint trả placeholder, xem `apps/api/app/analysis/` |
+| AI Module (XGBoost/RF/LSTM) | **Chưa triển khai** — chỉ có scaffold interface ở `services/ai/`, xem README ở đó cho việc cần làm tiếp |
+| Dashboard — candlestick + chỉ báo | Đã test bằng browser thật (Playwright), render đúng với dữ liệu thật từ backend |
+| Dashboard — tìm kiếm mã | Đã test, hoạt động đúng |
+| Dashboard — watchlist + đăng nhập | Đã test luồng API (auth, RLS) bằng JWT giả lập cục bộ; **chưa test được Supabase Auth thật** (cần project thật) |
 
-### Lỗi đã sửa
+## Deploy
 
-`backend/app/data_fetcher.py::fetch_company_info()` gọi `vnstock` với
-`source="TCBS"`, nhưng bản `vnstock` mới nhất (4.x, được cài từ
-`requirements.txt` ghi `>=3.2.0`) đã bỏ nguồn `TCBS` cho phần thông tin
-công ty — chỉ còn hỗ trợ `KBS, VCI, MSN, FMP`, khiến `POST /sync` luôn lỗi
-502. Đã đổi sang `source="VCI"` (cùng nguồn đang dùng cho giá) và cập nhật
-lại tên cột cho đúng schema mới (`organ_short_name`, `sector`).
+- **Frontend (Vercel)**: connect repo, root directory `apps/web`. Env
+  vars: `NEXT_PUBLIC_API_BASE_URL` (URL backend đã deploy),
+  `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
+- **Backend**: bất kỳ nền tảng nào chạy được Docker + process dài hạn
+  (Render, Fly.io, Railway...) — KHÔNG dùng serverless thuần vì scheduler
+  cần 1 process chạy liên tục. Ví dụ với Render:
+  - Service `api`: build từ `apps/api/Dockerfile`, `RUN_SCHEDULER=false`,
+    có thể scale nhiều instance.
+  - Service `worker`: cùng image, `RUN_SCHEDULER=true`, **cố định đúng 1
+    instance** (xem `apps/api/README.md` mục Scheduler để hiểu vì sao).
+  - Cả 2 dùng chung `DATABASE_URL`/`DIRECT_URL` trỏ Supabase.
+  - Chạy `alembic upgrade head` như Pre-Deploy Command (Render) hoặc
+    `release_command` (Fly) — không chạy tay, dễ quên gây lệch schema.
+  - Cập nhật `CORS_ALLOW_ORIGINS`/`CORS_ALLOW_ORIGIN_REGEX` ở backend
+    thành domain Vercel thật trước khi public.
 
-Môi trường chạy việc kiểm tra này bị chặn mạng ra ngoài tới các host dữ
-liệu chứng khoán (proxy trả 403), nên chưa xác nhận được dữ liệu giá thật
-kéo về đúng — bạn cần chạy `POST /api/stocks/FPT/sync` trên máy mình (có
-internet bình thường) để xác nhận bước cuối này.
+## Giới hạn đã biết
 
-## Việc tiếp theo hợp lý
+- `vnstock` là thư viện cộng đồng scrape dữ liệu VCI, không phải API
+  chính thức của HOSE — không có SLA, đã từng đổi API giữa chừng dự án
+  này (`source="TCBS"` bị loại bỏ). Mọi logic đặc thù của nó đã cô lập
+  trong `apps/api/app/collectors/vnstock_adapter.py` để dễ thay thế.
+- Analysis Engine và AI Module là scaffold, chưa có logic thật — xem
+  bảng trạng thái ở trên và README riêng của `services/ai/`.
+- Môi trường phát triển bản này bị chặn mạng ra ngoài tới các host dữ
+  liệu chứng khoán, nên phần lấy dữ liệu thật (sync/realtime) chỉ được
+  xác minh về mặt cấu trúc — bạn cần tự chạy trên máy có internet để
+  xác nhận nốt.
 
-1. Chạy thử `POST /api/stocks/FPT/sync` trên máy bạn — xác nhận `vnstock`
-   hoạt động đúng với môi trường của bạn (thư viện này đôi khi đổi cấu
-   trúc dữ liệu trả về).
-2. Nối frontend với API thật theo hướng dẫn trong `frontend/README.md`.
-3. Khi ổn định 2 phần trên, mới nên bắt đầu Module AI Prediction (Level 1:
-   Random Forest/XGBoost trước, chưa cần LSTM).
-4. `docker-compose.yml` hiện chạy dev server cho cả 2 phía (có hot-reload);
-   khi cần deploy thật, nên tách thêm bản build production cho frontend
-   (build tĩnh + nginx) thay vì chạy `vite dev` trong container.
+## Mã cũ (`legacy/`)
+
+MVP đầu tiên (FastAPI + SQLite + React/Vite) — đã đóng băng, không phát
+triển tiếp, giữ lại để tham khảo logic đã debug (đặc biệt là
+`data_fetcher.py`/`poller.py`, đã port sang `vnstock_adapter.py`). Xem
+`legacy/README.md`.

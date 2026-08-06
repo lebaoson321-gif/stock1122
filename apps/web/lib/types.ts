@@ -1,0 +1,75 @@
+// Mirror của app/schemas/*.py bên backend (apps/api). Giữ tên field khớp
+// 1-1 với JSON response để khỏi phải viết lớp map riêng.
+
+export interface StockSummary {
+  symbol: string;
+  company_name: string;
+  sector: string;
+}
+
+export interface PricePoint {
+  date: string; // "YYYY-MM-DD"
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  ma20: number | null;
+  ma50: number | null;
+  ma200: number | null;
+  ema12: number | null;
+  ema26: number | null;
+  rsi14: number | null;
+  macd: number | null;
+  macd_signal: number | null;
+  macd_hist: number | null;
+  bb_upper: number | null;
+  bb_middle: number | null;
+  bb_lower: number | null;
+}
+
+export interface AnalysisResponse {
+  symbol: string;
+  date: string;
+  close: number;
+  change_pct: number;
+  ma20: number | null;
+  ma50: number | null;
+  trend: "bullish" | "bearish";
+  rsi14: number | null;
+  rsi_status: "overbought" | "oversold" | "neutral";
+  macd: number | null;
+  macd_signal_value: number | null;
+  macd_signal_status: "buy" | "sell";
+}
+
+export interface SyncResult {
+  symbol: string;
+  rows_synced: number;
+  message: string;
+}
+
+export interface ScorePlaceholder {
+  symbol: string;
+  available: false;
+  message: string;
+}
+
+export interface PredictionPlaceholder {
+  symbol: string;
+  available: false;
+  message: string;
+}
+
+export interface WatchlistItemOut {
+  stock_id: number;
+  symbol: string;
+  company_name: string;
+  added_at: string;
+}
+
+export interface WatchlistOut {
+  id: number;
+  name: string;
+  items: WatchlistItemOut[];
+}

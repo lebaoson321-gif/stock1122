@@ -12,6 +12,11 @@ class StockSummary(BaseModel):
     sector: str
 
 
+class HoseSymbol(BaseModel):
+    symbol: str
+    company_name: str
+
+
 class PricePoint(BaseModel):
     date: date_type
     open: float

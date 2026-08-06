@@ -13,7 +13,11 @@ from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
-from app.collectors.base import CompanyInfo, MarketDataProvider, PriceBar, PriceBoardQuote
+from app.collectors.base import CompanyInfo, ListedSymbol, MarketDataProvider, PriceBar, PriceBoardQuote
+
+# vnstock trả cột "exchange" (đổi tên từ "board" của VCI) với các giá trị
+# đã gặp thực tế là "HOSE" hoặc "HSX" tuỳ phiên bản API — chấp nhận cả 2.
+_HOSE_EXCHANGE_ALIASES = {"HOSE", "HSX"}
 
 
 def _json_safe(value):
@@ -126,3 +130,24 @@ class VnstockAdapter(MarketDataProvider):
                 )
             )
         return quotes
+
+    def list_hose_symbols(self) -> list[ListedSymbol]:
+        from vnstock import Listing
+
+        df = Listing(source="VCI").symbols_by_exchange()
+        if df is None or df.empty:
+            return []
+
+        df = df[df["type"] == "STOCK"]
+        exchange = df["exchange"].astype(str).str.upper()
+        df = df[exchange.isin(_HOSE_EXCHANGE_ALIASES)]
+
+        symbols = []
+        for _, row in df.iterrows():
+            row_dict = row.to_dict()
+            symbol = _first_present(row_dict, ["symbol"])
+            if not symbol:
+                continue
+            name = _first_present(row_dict, ["organ_name", "organ_short_name"]) or symbol
+            symbols.append(ListedSymbol(symbol=str(symbol), company_name=str(name)))
+        return sorted(symbols, key=lambda s: s.symbol)

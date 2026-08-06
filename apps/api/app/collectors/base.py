@@ -43,6 +43,12 @@ class PriceBoardQuote:
     raw: dict
 
 
+@dataclass
+class ListedSymbol:
+    symbol: str
+    company_name: str
+
+
 class MarketDataProvider(Protocol):
     """Interface chuẩn hoá — implementation không được để lộ kiểu dữ liệu
     thô (DataFrame, tên cột) của provider cụ thể ra ngoài."""
@@ -52,3 +58,5 @@ class MarketDataProvider(Protocol):
     def get_company_info(self, symbol: str) -> CompanyInfo: ...
 
     def get_price_board(self, symbols: list[str]) -> list[PriceBoardQuote]: ...
+
+    def list_hose_symbols(self) -> list[ListedSymbol]: ...

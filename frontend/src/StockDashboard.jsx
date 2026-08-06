@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import {
   ResponsiveContainer, ComposedChart, Line, Area, Bar, Cell, XAxis, YAxis,
   Tooltip, CartesianGrid, ReferenceLine,
 } from "recharts";
+import { api } from "./api";
 
 // ----------------------------------------------------------------------
 // Bảng màu lấy theo đúng quy ước bảng điện giao dịch HOSE:
@@ -23,96 +24,44 @@ const COLORS = {
 };
 
 // ----------------------------------------------------------------------
-// Sinh dữ liệu mô phỏng (thay cho gọi API thật /api/stocks/:symbol/history)
-// Cấu trúc field GIỐNG HỆT response backend để khi nối API thật chỉ cần
-// thay hàm loadData() bằng fetch(`${API_BASE_URL}/api/stocks/${symbol}/history`)
+// Dữ liệu giá + chỉ báo lấy từ backend FastAPI thật (xem src/api.js).
 // ----------------------------------------------------------------------
-function mulberry32(seed) {
-  return function () {
-    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+
+// Chuyển PricePoint (snake_case, từ backend) sang field name mà chart
+// đang dùng (camelCase cho macd_signal/macd_hist, cộng dateLabel để hiển thị).
+function mapHistory(points) {
+  return points.map((p) => {
+    const d = new Date(p.date);
+    return {
+      date: d,
+      dateLabel: d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" }),
+      open: p.open, high: p.high, low: p.low, close: p.close, volume: p.volume,
+      ma20: p.ma20, ma50: p.ma50, ma200: p.ma200,
+      rsi: p.rsi, macd: p.macd, macdSignal: p.macd_signal, macdHist: p.macd_hist,
+    };
+  });
 }
 
-function genSeries(symbol, seed, base, n = 180) {
-  const rnd = mulberry32(seed);
-  const days = [];
-  let price = base;
-  const today = new Date();
-  for (let i = n; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    if (d.getDay() === 0 || d.getDay() === 6) continue;
-    const drift = (rnd() - 0.48) * 0.02;
-    price = Math.max(price * (1 + drift), 1);
-    const open = price * (1 + (rnd() - 0.5) * 0.006);
-    const high = Math.max(open, price) * (1 + rnd() * 0.008);
-    const low = Math.min(open, price) * (1 - rnd() * 0.008);
-    const volume = Math.round(1_000_000 + rnd() * 6_000_000);
-    days.push({ date: d, open, high, low, close: price, volume });
+// Lấy history + analysis cho một mã; nếu backend báo chưa có dữ liệu
+// (mã chưa từng sync), tự gọi POST /sync một lần rồi thử lại.
+async function loadStockData(symbol) {
+  const fetchBoth = () =>
+    Promise.all([api.getHistory(symbol), api.getAnalysis(symbol)]);
+  try {
+    const [history, analysis] = await fetchBoth();
+    return { history, analysis };
+  } catch (e) {
+    await api.syncStock(symbol);
+    const [history, analysis] = await fetchBoth();
+    return { history, analysis };
   }
-  return computeIndicators(days);
-}
-
-function computeIndicators(days) {
-  const closes = days.map((d) => d.close);
-  const ma = (arr, i, period) => {
-    if (i < period - 1) return null;
-    let s = 0;
-    for (let k = i - period + 1; k <= i; k++) s += arr[k];
-    return s / period;
-  };
-  // RSI(14)
-  const rsi = new Array(days.length).fill(null);
-  let avgGain = 0, avgLoss = 0;
-  for (let i = 1; i < days.length; i++) {
-    const diff = closes[i] - closes[i - 1];
-    const gain = Math.max(diff, 0);
-    const loss = Math.max(-diff, 0);
-    if (i <= 14) {
-      avgGain += gain / 14;
-      avgLoss += loss / 14;
-      if (i === 14) rsi[i] = 100 - 100 / (1 + avgGain / (avgLoss || 1e-9));
-    } else {
-      avgGain = (avgGain * 13 + gain) / 14;
-      avgLoss = (avgLoss * 13 + loss) / 14;
-      rsi[i] = 100 - 100 / (1 + avgGain / (avgLoss || 1e-9));
-    }
-  }
-  // MACD
-  const ema = (period) => {
-    const k = 2 / (period + 1);
-    const out = new Array(closes.length).fill(null);
-    out[0] = closes[0];
-    for (let i = 1; i < closes.length; i++) out[i] = closes[i] * k + out[i - 1] * (1 - k);
-    return out;
-  };
-  const ema12 = ema(12), ema26 = ema(26);
-  const macd = closes.map((_, i) => ema12[i] - ema26[i]);
-  const k9 = 2 / 10;
-  const signal = new Array(macd.length).fill(null);
-  signal[0] = macd[0];
-  for (let i = 1; i < macd.length; i++) signal[i] = macd[i] * k9 + signal[i - 1] * (1 - k9);
-
-  return days.map((d, i) => ({
-    ...d,
-    dateLabel: d.date.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" }),
-    ma20: ma(closes, i, 20),
-    ma50: ma(closes, i, 50),
-    rsi: i >= 14 ? rsi[i] : null,
-    macd: macd[i],
-    macdSignal: signal[i],
-    macdHist: macd[i] - signal[i],
-  }));
 }
 
 const WATCHLIST = [
-  { symbol: "FPT", name: "FPT Corporation", sector: "Công nghệ", seed: 11, base: 128 },
-  { symbol: "VNM", name: "Vinamilk", sector: "Hàng tiêu dùng", seed: 22, base: 68 },
-  { symbol: "HPG", name: "Hòa Phát", sector: "Vật liệu", seed: 33, base: 27 },
-  { symbol: "VCB", name: "Vietcombank", sector: "Ngân hàng", seed: 44, base: 91 },
+  { symbol: "FPT", name: "FPT Corporation", sector: "Công nghệ" },
+  { symbol: "VNM", name: "Vinamilk", sector: "Hàng tiêu dùng" },
+  { symbol: "HPG", name: "Hòa Phát", sector: "Vật liệu" },
+  { symbol: "VCB", name: "Vietcombank", sector: "Ngân hàng" },
 ];
 
 const FUNDAMENTALS = {
@@ -140,16 +89,24 @@ function fmtVol(n) {
 }
 
 function TickerTape() {
-  const items = useMemo(
-    () => WATCHLIST.map((s) => {
-      const data = genSeries(s.symbol, s.seed, s.base, 40);
-      const last = data[data.length - 1];
-      const prev = data[data.length - 2];
-      const chg = ((last.close - prev.close) / prev.close) * 100;
-      return { ...s, price: last.close, chg };
-    }),
-    []
-  );
+  const [quotes, setQuotes] = useState({});
+
+  useEffect(() => {
+    let cancelled = false;
+    WATCHLIST.forEach(async (s) => {
+      try {
+        const { analysis } = await loadStockData(s.symbol);
+        if (!cancelled) {
+          setQuotes((q) => ({ ...q, [s.symbol]: { price: analysis.close, chg: analysis.change_pct } }));
+        }
+      } catch {
+        if (!cancelled) setQuotes((q) => ({ ...q, [s.symbol]: null }));
+      }
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const items = WATCHLIST.map((s) => ({ ...s, quote: quotes[s.symbol] }));
   const loop = [...items, ...items, ...items];
   return (
     <div style={{
@@ -168,10 +125,20 @@ function TickerTape() {
             fontFamily: "'JetBrains Mono', monospace", whiteSpace: "nowrap",
           }}>
             <span style={{ color: COLORS.textPrimary, fontWeight: 700, fontSize: 13 }}>{it.symbol}</span>
-            <span style={{ color: COLORS.textPrimary, fontSize: 13 }}>{fmt(it.price)}</span>
-            <span style={{ color: it.chg >= 0 ? COLORS.up : COLORS.down, fontSize: 13 }}>
-              {it.chg >= 0 ? "▲" : "▼"} {fmt(Math.abs(it.chg))}%
-            </span>
+            {it.quote === undefined && (
+              <span style={{ color: COLORS.textMuted, fontSize: 13 }}>đang tải…</span>
+            )}
+            {it.quote === null && (
+              <span style={{ color: COLORS.textMuted, fontSize: 13 }}>—</span>
+            )}
+            {it.quote && (
+              <>
+                <span style={{ color: COLORS.textPrimary, fontSize: 13 }}>{fmt(it.quote.price)}</span>
+                <span style={{ color: it.quote.chg >= 0 ? COLORS.up : COLORS.down, fontSize: 13 }}>
+                  {it.quote.chg >= 0 ? "▲" : "▼"} {fmt(Math.abs(it.quote.chg))}%
+                </span>
+              </>
+            )}
           </div>
         ))}
       </div>
@@ -233,26 +200,116 @@ function CustomTooltip({ active, payload, label }) {
   );
 }
 
+function WatchlistSwitcher({ symbol, onChange }) {
+  return (
+    <div style={{ display: "flex", gap: 6 }}>
+      {WATCHLIST.map((s) => (
+        <button
+          key={s.symbol}
+          onClick={() => onChange(s.symbol)}
+          style={{
+            fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 13,
+            padding: "8px 16px", borderRadius: 8, cursor: "pointer",
+            border: `1px solid ${s.symbol === symbol ? COLORS.up : COLORS.border}`,
+            background: s.symbol === symbol ? "rgba(0,192,118,0.1)" : "transparent",
+            color: s.symbol === symbol ? COLORS.up : COLORS.textMuted,
+          }}
+        >
+          {s.symbol}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function StockDashboard() {
   const [symbol, setSymbol] = useState("FPT");
+  const [history, setHistory] = useState(null);
+  const [analysis, setAnalysis] = useState(null);
+  const [status, setStatus] = useState("loading"); // loading | ready | error
+  const [errorMsg, setErrorMsg] = useState("");
+  const [retryKey, setRetryKey] = useState(0);
+
   const stock = WATCHLIST.find((s) => s.symbol === symbol);
-  const data = useMemo(() => genSeries(stock.symbol, stock.seed, stock.base), [stock]);
-  const latest = data[data.length - 1];
-  const prev = data[data.length - 2];
-  const chgPct = ((latest.close - prev.close) / prev.close) * 100;
-  const trendUp = latest.ma20 !== null && latest.ma50 !== null && latest.ma20 > latest.ma50;
-  const rsiStatus = latest.rsi > 70 ? "Quá mua" : latest.rsi < 30 ? "Quá bán" : "Trung tính";
-  const rsiColor = latest.rsi > 70 ? COLORS.down : latest.rsi < 30 ? COLORS.up : COLORS.ref;
-  const macdBuy = latest.macd > latest.macdSignal;
+
+  useEffect(() => {
+    let cancelled = false;
+    setStatus("loading");
+    setErrorMsg("");
+    loadStockData(symbol)
+      .then(({ history, analysis }) => {
+        if (cancelled) return;
+        setHistory(mapHistory(history));
+        setAnalysis(analysis);
+        setStatus("ready");
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setErrorMsg(e.message || "Lỗi không xác định");
+        setStatus("error");
+      });
+    return () => { cancelled = true; };
+  }, [symbol, retryKey]);
+
+  if (status !== "ready" || !analysis || !history) {
+    return (
+      <div style={{
+        background: COLORS.bg, minHeight: "100%",
+        fontFamily: "'Inter', sans-serif", color: COLORS.textPrimary,
+      }}>
+        <TickerTape />
+        <div style={{ maxWidth: 1180, margin: "0 auto", padding: "28px 24px 48px" }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 24 }}>
+            <WatchlistSwitcher symbol={symbol} onChange={setSymbol} />
+          </div>
+          <Card>
+            {status === "loading" && (
+              <div style={{ textAlign: "center", padding: "48px 0", color: COLORS.textMuted }}>
+                <div>Đang tải dữ liệu {symbol} từ backend…</div>
+                <div style={{ fontSize: 12, marginTop: 8 }}>
+                  Nếu là lần đầu xem mã này, hệ thống sẽ tự đồng bộ dữ liệu từ HOSE — có thể mất một chút thời gian.
+                </div>
+              </div>
+            )}
+            {status === "error" && (
+              <div style={{ textAlign: "center", padding: "48px 0" }}>
+                <div style={{ color: COLORS.down, marginBottom: 12 }}>Lỗi tải dữ liệu: {errorMsg}</div>
+                <div style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 20 }}>
+                  Kiểm tra backend đã chạy tại {api.API_BASE_URL} (xem README ở thư mục gốc dự án).
+                </div>
+                <button
+                  onClick={() => setRetryKey((k) => k + 1)}
+                  style={{
+                    fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 13,
+                    padding: "8px 20px", borderRadius: 8, cursor: "pointer",
+                    border: `1px solid ${COLORS.up}`, background: "rgba(0,192,118,0.1)", color: COLORS.up,
+                  }}
+                >
+                  Thử lại
+                </button>
+              </div>
+            )}
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  const chgPct = analysis.change_pct;
+  const trendUp = analysis.trend === "bullish";
+  const rsiValue = analysis.rsi;
+  const rsiStatus = analysis.rsi_status === "overbought" ? "Quá mua" : analysis.rsi_status === "oversold" ? "Quá bán" : "Trung tính";
+  const rsiColor = analysis.rsi_status === "overbought" ? COLORS.down : analysis.rsi_status === "oversold" ? COLORS.up : COLORS.ref;
+  const macdBuy = analysis.macd_signal_status === "buy";
   const fund = FUNDAMENTALS[symbol];
   const fundTotal = ((fund.profitGrowth + fund.roe + fund.debt) / 3).toFixed(1);
   const news = NEWS[symbol];
   // AI prediction placeholder — mô phỏng xác suất dựa trên trend + RSI, sẽ thay bằng model thật ở Module 5
   const aiProb = Math.max(5, Math.min(95, Math.round(
-    50 + (trendUp ? 12 : -12) + (macdBuy ? 8 : -8) + (50 - latest.rsi) * 0.2
+    50 + (trendUp ? 12 : -12) + (macdBuy ? 8 : -8) + (50 - (rsiValue ?? 50)) * 0.2
   )));
 
-  const chartData = data.slice(-90);
+  const chartData = history.slice(-90);
 
   return (
     <div style={{
@@ -280,23 +337,7 @@ export default function StockDashboard() {
             <div style={{ color: COLORS.textMuted, fontSize: 13, marginTop: 4 }}>{stock.sector}</div>
           </div>
 
-          <div style={{ display: "flex", gap: 6 }}>
-            {WATCHLIST.map((s) => (
-              <button
-                key={s.symbol}
-                onClick={() => setSymbol(s.symbol)}
-                style={{
-                  fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 13,
-                  padding: "8px 16px", borderRadius: 8, cursor: "pointer",
-                  border: `1px solid ${s.symbol === symbol ? COLORS.up : COLORS.border}`,
-                  background: s.symbol === symbol ? "rgba(0,192,118,0.1)" : "transparent",
-                  color: s.symbol === symbol ? COLORS.up : COLORS.textMuted,
-                }}
-              >
-                {s.symbol}
-              </button>
-            ))}
-          </div>
+          <WatchlistSwitcher symbol={symbol} onChange={setSymbol} />
         </div>
 
         {/* Price row */}
@@ -308,7 +349,7 @@ export default function StockDashboard() {
             fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 42,
             color: chgPct >= 0 ? COLORS.up : COLORS.down,
           }}>
-            {fmt(latest.close, 2)}
+            {fmt(analysis.close, 2)}
           </span>
           <span style={{
             fontFamily: "'JetBrains Mono', monospace", fontSize: 16, fontWeight: 600,
@@ -405,7 +446,7 @@ export default function StockDashboard() {
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
               <span style={{ fontSize: 12, color: COLORS.textMuted }}>Hiện tại</span>
               <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: rsiColor, fontWeight: 700 }}>
-                {fmt(latest.rsi)} · {rsiStatus}
+                {fmt(rsiValue)} · {rsiStatus}
               </span>
             </div>
           </Card>
@@ -450,7 +491,8 @@ export default function StockDashboard() {
         </div>
 
         <div style={{ marginTop: 32, fontSize: 11, color: COLORS.textMuted, textAlign: "center" }}>
-          Dữ liệu mô phỏng để trình bày giao diện. Kết nối API thật qua backend FastAPI (xem README) để hiển thị dữ liệu HOSE thật.
+          Giá, khối lượng và chỉ báo kỹ thuật (MA/RSI/MACD) lấy từ backend FastAPI thật ({api.API_BASE_URL}).
+          Điểm cơ bản, tin tức và AI Prediction vẫn là dữ liệu mô phỏng — backend chưa có các module này.
         </div>
       </div>
     </div>

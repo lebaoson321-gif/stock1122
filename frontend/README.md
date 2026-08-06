@@ -13,41 +13,34 @@ npm run dev
 
 Mở http://localhost:5173
 
+Backend cần chạy trước ở http://localhost:8000 (xem `/backend/README.md`),
+nếu không dashboard sẽ hiện màn hình lỗi kèm nút "Thử lại".
+
 ## Trạng thái hiện tại
 
-`StockDashboard.jsx` đang chạy với **dữ liệu mô phỏng** (hàm `genSeries`)
-để bạn xem giao diện đầy đủ ngay lập tức, không cần chờ backend/API thật.
-Cấu trúc dữ liệu được đặt tên khớp với response của backend
-(`ma20`, `ma50`, `rsi`, `macd`, `macd_signal`...) để việc nối API thật
-sau này chỉ là thay nguồn dữ liệu, không phải viết lại giao diện.
-
-## Nối với backend thật
-
-1. Chạy backend (xem `/backend/README.md`):
-   ```bash
-   cd ../backend && uvicorn app.main:app --reload
-   ```
-2. Trong `StockDashboard.jsx`, thay lời gọi `genSeries(...)` bằng:
-   ```jsx
-   import { api } from "./api";
-   const [data, setData] = useState([]);
-   useEffect(() => {
-     api.syncStock(symbol).then(() => api.getHistory(symbol)).then(setData);
-   }, [symbol]);
-   ```
-3. Danh sách mã cổ phiếu (`WATCHLIST`) có thể thay bằng `api.listStocks()`.
+`StockDashboard.jsx` đã nối với backend FastAPI thật qua `src/api.js`:
+- Giá, khối lượng, MA20/MA50/MA200, RSI, MACD: lấy từ `api.getHistory()` /
+  `api.getAnalysis()`. Khi chọn một mã chưa từng sync, dashboard tự gọi
+  `api.syncStock()` một lần rồi tải lại — có loading state trong lúc chờ
+  (đồng bộ lần đầu có thể mất vài chục giây) và error state kèm nút thử
+  lại nếu backend không phản hồi được.
+- Điểm cơ bản (`FUNDAMENTALS`), tin tức/tâm lý thị trường (`NEWS`) và AI
+  Prediction: vẫn là dữ liệu mô phỏng, vì backend chưa có các module này
+  (xem `backend/README.md` — mục "Bước tiếp theo").
 
 ## Cấu trúc
 
 | File | Vai trò |
 |---|---|
-| `src/StockDashboard.jsx` | Toàn bộ giao diện dashboard |
+| `src/StockDashboard.jsx` | Toàn bộ giao diện dashboard + gọi API |
 | `src/api.js` | Service gọi backend FastAPI |
 | `src/App.jsx` | Entry point |
 
 ## Bước tiếp theo
 
-- Thêm ô tìm kiếm mã CP tự do (hiện đang là danh sách cố định 4 mã)
+- Thêm ô tìm kiếm mã CP tự do (hiện đang là danh sách cố định 4 mã,
+  có thể thay bằng `api.listStocks()`)
 - Thêm trang riêng cho Chart (candlestick thật) và Analysis chi tiết
 - Responsive cho mobile (hiện tối ưu cho desktop/tablet)
-- Loading/error state khi gọi API thật (hiện dữ liệu mô phỏng luôn có sẵn)
+- Thay `FUNDAMENTALS`/`NEWS`/AI Prediction bằng dữ liệu thật khi backend
+  có các module tương ứng

@@ -67,11 +67,23 @@ export interface ScorePlaceholder {
 
 export type ScoreResult = ScoreResponse | ScorePlaceholder;
 
+export interface PredictionResponse {
+  symbol: string;
+  available: true;
+  date: string;
+  model_name: string;
+  model_version: string;
+  prob_up: number | null;
+  predicted_label: "up" | "down" | null;
+}
+
 export interface PredictionPlaceholder {
   symbol: string;
   available: false;
   message: string;
 }
+
+export type PredictionResult = PredictionResponse | PredictionPlaceholder;
 
 export interface WatchlistItemOut {
   stock_id: number;

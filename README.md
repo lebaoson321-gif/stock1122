@@ -35,7 +35,7 @@ flowchart LR
 │   ├── api/            FastAPI + SQLAlchemy + Alembic — backend chính
 │   └── web/              Next.js (App Router) + TypeScript + Tailwind — dashboard
 ├── services/
-│   └── ai/                 AI Module (XGBoost/Random Forest/LSTM) — SCAFFOLD, chưa train model thật
+│   └── ai/                 AI Module — Random Forest đã cài đặt thật (chạy tay train.py/predict.py); XGBoost/LSTM còn scaffold
 ├── legacy/                   MVP cũ (SQLite + React/Vite) — đã đóng băng, chỉ để tham khảo
 └── docker-compose.yml          Chạy cục bộ (Postgres local, không cần Supabase)
 ```
@@ -113,17 +113,18 @@ npm run dev
 
 | Module | Trạng thái |
 |---|---|
-| Data Collection — lịch sử giá qua vnstock | Đã port + fix lỗi `source="TCBS"` từ MVP cũ, đã test cấu trúc dữ liệu; **chưa xác nhận được dữ liệu thật** (sandbox dev bị chặn mạng ra vnstock) — cần bạn tự chạy `POST /sync` trên máy có internet |
-| Data Collection — realtime price board | Tương tự — đã port từ `legacy/realtime-poller`, cùng giới hạn xác nhận |
-| Data Collection — scheduler định kỳ | Đã cài đặt (APScheduler, advisory lock chống double-run, `data_sync_log`), đã test cục bộ: job chạy đúng giờ VN, lock hoạt động đúng, log ghi đúng khi lỗi |
-| Data Storage — schema Postgres, upsert chống trùng | Đã test đầy đủ trên Postgres thật (migration, composite index, upsert idempotent) |
-| Data Storage — RLS watchlist | Đã test đầy đủ — xác nhận RLS thực sự chặn được truy vấn cross-user khi dùng đúng role `app_backend` |
-| Data Processing — MA/EMA/RSI/MACD/Bollinger | Đã test trên Postgres thật với dữ liệu giả lập, kết quả đúng |
-| Analysis Engine (chấm điểm xu hướng/thanh khoản/biến động) | **Chưa triển khai** — endpoint trả placeholder, xem `apps/api/app/analysis/` |
-| AI Module (XGBoost/RF/LSTM) | **Chưa triển khai** — chỉ có scaffold interface ở `services/ai/`, xem README ở đó cho việc cần làm tiếp |
-| Dashboard — candlestick + chỉ báo | Đã test bằng browser thật (Playwright), render đúng với dữ liệu thật từ backend |
-| Dashboard — tìm kiếm mã | Đã test, hoạt động đúng |
-| Dashboard — watchlist + đăng nhập | Đã test luồng API (auth, RLS) bằng JWT giả lập cục bộ; **chưa test được Supabase Auth thật** (cần project thật) |
+| Data Collection — lịch sử giá qua vnstock | **Đã xác nhận với dữ liệu thật** — đồng bộ thành công 1306 dòng giá FPT qua backend deploy trên Render, kết nối Supabase Postgres thật |
+| Data Collection — realtime price board | Đã port từ `legacy/realtime-poller`, đã test cấu trúc; chưa xác nhận với dữ liệu thật (chưa gọi tới trong quá trình deploy) |
+| Data Collection — danh sách mã + đồng bộ hàng loạt | Đã có trang danh sách mã + nút đồng bộ 10 mã phổ biến (`POST /sync-defaults`), không cần gõ tìm thủ công |
+| Data Collection — scheduler định kỳ | Đã cài đặt (APScheduler, advisory lock chống double-run, `data_sync_log`), đã test cục bộ; **`RUN_SCHEDULER=false`** trên backend đang deploy — chưa tự động sync hằng ngày, cần bật thêm service `worker` (xem mục Deploy) |
+| Data Storage — schema Postgres, upsert chống trùng | Đã test đầy đủ trên Postgres thật (migration, composite index, upsert idempotent), đã chạy migration thật trên Supabase project của bạn |
+| Data Storage — RLS watchlist | Đã cài đặt và test đúng bằng role `app_backend`; **deployment thật đang dùng role `postgres`** (theo lựa chọn của bạn) nên RLS chưa thực sự enforce ở đó — chỉ còn lớp kiểm tra ownership trong code |
+| Data Processing — MA/EMA/RSI/MACD/Bollinger | Đã test trên Postgres thật, đã xác nhận đúng với dữ liệu FPT thật |
+| Analysis Engine (chấm điểm xu hướng/thanh khoản/biến động) | **Đã triển khai thật** — tự tính lại mỗi lần sync, `GET /score` trả điểm thật; đã test trên Postgres local, dashboard hiển thị đúng |
+| AI Module (Random Forest) | **Đã triển khai thật** — `services/ai/train.py` + `predict.py` chạy được end-to-end, ghi vào `ai_predictions`, `GET /prediction` đọc và trả về đúng; đã test trên Postgres local. **Cần bạn tự chạy `train.py`/`predict.py` trên dữ liệu Supabase thật** — chưa chạy tự động, chưa có trên deployment hiện tại. XGBoost/LSTM còn scaffold, xem `services/ai/README.md` |
+| Dashboard — candlestick + chỉ báo + điểm chấm + AI prediction | Đã test bằng browser thật (Playwright) và trên deployment Vercel thật, render đúng với dữ liệu thật từ backend |
+| Dashboard — tìm kiếm + danh sách mã | Đã test, hoạt động đúng trên deployment thật |
+| Dashboard — watchlist + đăng nhập | Đã deploy thật (Vercel + Supabase Auth); cần xác nhận email trước khi đăng nhập lần đầu (Supabase mặc định bật "Confirm email") |
 
 ## Deploy
 
@@ -149,12 +150,16 @@ npm run dev
   chính thức của HOSE — không có SLA, đã từng đổi API giữa chừng dự án
   này (`source="TCBS"` bị loại bỏ). Mọi logic đặc thù của nó đã cô lập
   trong `apps/api/app/collectors/vnstock_adapter.py` để dễ thay thế.
-- Analysis Engine và AI Module là scaffold, chưa có logic thật — xem
-  bảng trạng thái ở trên và README riêng của `services/ai/`.
-- Môi trường phát triển bản này bị chặn mạng ra ngoài tới các host dữ
-  liệu chứng khoán, nên phần lấy dữ liệu thật (sync/realtime) chỉ được
-  xác minh về mặt cấu trúc — bạn cần tự chạy trên máy có internet để
-  xác nhận nốt.
+- AI Module hiện chỉ có Random Forest; XGBoost/LSTM còn scaffold. Cả
+  Analysis Engine lẫn AI Module chưa có job tự động — điểm chấm tự tính
+  lại mỗi lần sync, nhưng dự đoán AI cần chạy tay `train.py`/`predict.py`
+  (xem `services/ai/README.md`).
+- Scheduler tự động sync hằng ngày chưa bật trên deployment thật
+  (`RUN_SCHEDULER=false`) — cần thêm service `worker` riêng nếu muốn dữ
+  liệu tự cập nhật (xem mục Deploy).
+- RLS trên watchlist chưa thực sự enforce ở deployment thật (đang dùng
+  role `postgres` thay vì `app_backend`) — chỉ còn lớp kiểm tra ownership
+  ở code backend.
 
 ## Mã cũ (`legacy/`)
 

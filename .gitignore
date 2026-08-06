@@ -21,5 +21,8 @@ apps/web/out/
 # vnstock tự tạo file này (nhắm vào AI agent) mỗi khi import — không commit
 AGENTS.md
 
+# Model đã train (dữ liệu dẫn xuất, dataset-specific, không commit)
+services/ai/artifacts/
+
 # Editor / OS
 .DS_Store

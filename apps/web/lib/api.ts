@@ -3,7 +3,7 @@
 // cho các endpoint watchlist cần đăng nhập.
 import type {
   AnalysisResponse,
-  PredictionPlaceholder,
+  PredictionResult,
   PricePoint,
   ScoreResult,
   StockSummary,
@@ -42,7 +42,7 @@ export const api = {
 
   getScore: (symbol: string) => request<ScoreResult>(`/api/stocks/${symbol}/score`),
 
-  getPrediction: (symbol: string) => request<PredictionPlaceholder>(`/api/stocks/${symbol}/prediction`),
+  getPrediction: (symbol: string) => request<PredictionResult>(`/api/stocks/${symbol}/prediction`),
 
   getWatchlist: (accessToken: string) =>
     request<WatchlistOut>(`/api/watchlist`, { headers: authHeaders(accessToken) }),

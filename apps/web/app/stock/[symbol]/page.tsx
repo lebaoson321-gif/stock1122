@@ -7,7 +7,7 @@ import { MacdPanel, RsiPanel } from "@/components/IndicatorPanel";
 import ScoreCard from "@/components/ScoreCard";
 import WatchlistButton from "@/components/WatchlistButton";
 import { api } from "@/lib/api";
-import type { AnalysisResponse, PricePoint, ScoreResult } from "@/lib/types";
+import type { AnalysisResponse, PredictionResult, PricePoint, ScoreResult } from "@/lib/types";
 
 type Status = "loading" | "ready" | "error";
 
@@ -39,6 +39,9 @@ export default function StockPage({ params }: { params: { symbol: string } }) {
   const [score, setScore] = useState<ScoreResult>({
     symbol, available: false, message: "Đang tải…",
   });
+  const [prediction, setPrediction] = useState<PredictionResult>({
+    symbol, available: false, message: "Đang tải…",
+  });
   const [status, setStatus] = useState<Status>("loading");
   const [errorMsg, setErrorMsg] = useState("");
   const [retryKey, setRetryKey] = useState(0);
@@ -66,7 +69,8 @@ export default function StockPage({ params }: { params: { symbol: string } }) {
 
   useEffect(() => {
     let cancelled = false;
-    // Điểm chấm là dữ liệu bổ sung — không chặn trang chính nếu lỗi/chưa có.
+    // Điểm chấm + dự đoán AI là dữ liệu bổ sung — không chặn trang
+    // chính nếu lỗi/chưa có.
     api
       .getScore(symbol)
       .then((s) => {
@@ -74,6 +78,14 @@ export default function StockPage({ params }: { params: { symbol: string } }) {
       })
       .catch(() => {
         if (!cancelled) setScore({ symbol, available: false, message: "Không tải được điểm chấm." });
+      });
+    api
+      .getPrediction(symbol)
+      .then((p) => {
+        if (!cancelled) setPrediction(p);
+      })
+      .catch(() => {
+        if (!cancelled) setPrediction({ symbol, available: false, message: "Không tải được dự đoán." });
       });
     return () => {
       cancelled = true;
@@ -139,7 +151,7 @@ export default function StockPage({ params }: { params: { symbol: string } }) {
           </div>
           <CandlestickChart data={history} />
         </div>
-        <AIPredictionCard />
+        <AIPredictionCard prediction={prediction} />
       </div>
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">

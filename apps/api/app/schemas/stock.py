@@ -74,9 +74,20 @@ class ScorePlaceholder(BaseModel):
     message: str = "Chưa có điểm chấm cho mã này — gọi POST /sync để tính lại."
 
 
+class PredictionResponse(BaseModel):
+    symbol: str
+    available: bool = True
+    date: date_type
+    model_name: str
+    model_version: str
+    prob_up: Optional[float] = None
+    predicted_label: Optional[str] = None  # "up" | "down"
+
+
 class PredictionPlaceholder(BaseModel):
-    """AI Module chưa triển khai — xem services/ai/."""
+    """Chưa có dự đoán cho mã này — services/ai/predict.py chưa chạy
+    cho mã này (chạy thủ công hoặc theo lịch, xem services/ai/README.md)."""
 
     symbol: str
     available: bool = False
-    message: str = "AI Module chưa được triển khai (phase 2)."
+    message: str = "Chưa có dự đoán AI cho mã này."

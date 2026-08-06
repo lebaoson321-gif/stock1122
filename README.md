@@ -5,9 +5,10 @@ gốc (mục 9, Giai đoạn 2–3).
 
 ```
 .
-├── backend/     FastAPI — API dữ liệu, chỉ báo kỹ thuật
-├── frontend/    React (Vite) — dashboard giao diện
-└── run.sh       Chạy đồng thời cả 2 bằng một lệnh
+├── backend/            FastAPI — API dữ liệu, chỉ báo kỹ thuật
+├── frontend/           React (Vite) — dashboard giao diện
+├── run.sh              Chạy đồng thời cả 2 bằng một lệnh (không cần Docker)
+└── docker-compose.yml  Chạy đồng thời cả 2 bằng Docker
 ```
 
 ## Chạy nhanh — 1 lệnh (khuyên dùng)
@@ -22,6 +23,20 @@ Script này tự tạo virtualenv backend, cài `requirements.txt`, cài
 - Frontend: http://localhost:5173
 
 Nhấn `Ctrl+C` để dừng cả hai.
+
+## Chạy bằng Docker Compose
+
+```bash
+docker compose up --build
+```
+
+Chạy cả backend (uvicorn, có `--reload`) và frontend (vite dev server) trong
+container, mount code từ máy vào container nên sửa code vẫn tự reload như
+chạy trực tiếp. Cùng địa chỉ như trên: backend `:8000`, frontend `:5173`.
+`Ctrl+C` để dừng, hoặc `docker compose down`.
+
+Database SQLite của backend (`backend/app/stock_data.db`) được mount từ
+`backend/app/` trên máy nên dữ liệu vẫn còn sau khi tắt container.
 
 ## Chạy thủ công (2 terminal)
 
@@ -75,5 +90,6 @@ internet bình thường) để xác nhận bước cuối này.
 2. Nối frontend với API thật theo hướng dẫn trong `frontend/README.md`.
 3. Khi ổn định 2 phần trên, mới nên bắt đầu Module AI Prediction (Level 1:
    Random Forest/XGBoost trước, chưa cần LSTM).
-4. Cân nhắc Docker Compose để chạy cả 2 service bằng một lệnh, khi dự án
-   lớn hơn.
+4. `docker-compose.yml` hiện chạy dev server cho cả 2 phía (có hot-reload);
+   khi cần deploy thật, nên tách thêm bản build production cho frontend
+   (build tĩnh + nginx) thay vì chạy `vite dev` trong container.

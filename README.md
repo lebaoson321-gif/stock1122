@@ -7,8 +7,9 @@ gốc (mục 9, Giai đoạn 2–3).
 .
 ├── backend/            FastAPI — API dữ liệu, chỉ báo kỹ thuật
 ├── frontend/           React (Vite) — dashboard giao diện
-├── run.sh              Chạy đồng thời cả 2 bằng một lệnh (không cần Docker)
-└── docker-compose.yml  Chạy đồng thời cả 2 bằng Docker
+├── realtime-poller/    Script độc lập, poll giá khớp lệnh mỗi 60s, in ra console
+├── run.sh              Chạy đồng thời backend + frontend bằng một lệnh (không cần Docker)
+└── docker-compose.yml  Chạy đồng thời backend + frontend bằng Docker
 ```
 
 ## Chạy nhanh — 1 lệnh (khuyên dùng)
@@ -56,6 +57,20 @@ npm run dev
 Frontend chạy sẵn với dữ liệu mô phỏng nên bạn xem được giao diện đầy đủ
 ngay cả khi chưa bật backend. Xem `frontend/README.md` để nối dữ liệu thật.
 
+## Realtime poller (tuỳ chọn)
+
+Script độc lập, poll giá khớp lệnh mỗi 60 giây cho các mã đã có trong DB
+và in ra console — không ghi DB, không cần backend đang chạy:
+
+```bash
+cd realtime-poller
+pip install -r requirements.txt
+python poller.py
+```
+
+Cần backend đã `POST /sync` ít nhất một mã trước đó. Xem
+`realtime-poller/README.md` để biết chi tiết.
+
 ## Trạng thái từng phần (đã kiểm tra lại)
 
 | Phần | Trạng thái |
@@ -66,6 +81,8 @@ ngay cả khi chưa bật backend. Xem `frontend/README.md` để nối dữ li�
 | Frontend — cài dependency, `npm run dev` / `npm run build` | Đã chạy thử thành công |
 | Frontend — giao diện dashboard | Hoàn chỉnh, chạy được ngay với dữ liệu mô phỏng |
 | Frontend — nối API thật | Đã chuẩn bị sẵn `api.js`, cần bạn nối tay theo hướng dẫn |
+| Realtime poller — đọc DB, vòng lặp poll | Đã chạy thử thành công (đọc DB rỗng và có dữ liệu, xử lý lỗi mạng đúng) |
+| Realtime poller — dữ liệu giá khớp lệnh thật (`price_board`) | Chưa xác nhận được (sandbox chặn mạng, giống phần fetch dữ liệu HOSE ở trên) — cần bạn chạy thử trên máy |
 | AI Prediction (Module 5) | Chưa làm — hiện là công thức giả lập, không phải model thật |
 
 ### Lỗi đã sửa

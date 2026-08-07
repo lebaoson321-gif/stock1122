@@ -6,6 +6,7 @@ SQL thuần qua pandas, không cần SQLAlchemy ORM đầy đủ).
 """
 import os
 
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
@@ -15,6 +16,7 @@ _engine: Engine | None = None
 def get_engine() -> Engine:
     global _engine
     if _engine is None:
+        load_dotenv()
         database_url = os.environ["DATABASE_URL"]
         _engine = create_engine(database_url, pool_pre_ping=True)
     return _engine

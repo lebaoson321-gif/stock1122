@@ -17,12 +17,17 @@ on:
     - cron: "0 9 * * 1-5"
   workflow_dispatch:
     inputs:
+      source:
+        description: "Nguồn danh sách mã"
+        type: choice
+        options: ["hose", "db"]
+        default: "hose"
       years:
-        description: "Số năm dữ liệu lấy về mỗi mã (1 là đủ cho cập nhật hằng ngày)"
+        description: "Số năm dữ liệu lấy về mỗi mã (1 đủ cho cập nhật hằng ngày; đặt 5 khi cần backfill mã mới)"
         default: "1"
       delay:
         description: "Nghỉ bao nhiêu giây giữa 2 mã (tránh bị VCI chặn IP)"
-        default: "1"
+        default: "2"
 
 concurrency:
   group: daily-sync
@@ -51,14 +56,29 @@ jobs:
 
       - name: Lấy danh sách mã cần đồng bộ
         run: |
-          curl -fsS --max-time 120 "$API_BASE_URL/api/stocks" \
-            | jq -r '.[].symbol' > symbols.txt
+          # Nguồn mặc định là danh sách HOSE đầy đủ (~400 mã) chứ KHÔNG
+          # phải bảng `stocks` — bảng đó chỉ chứa mã đã sync được ít nhất
+          # 1 lần, nên nếu lấy từ đó thì mã mới niêm yết và mã từng lỗi sẽ
+          # không bao giờ được thử lại. Chạy lại hằng ngày trên danh sách
+          # đầy đủ khiến job tự vá: mã hôm nay lỗi mai sẽ thử lại.
+          if [ "$SOURCE" = "hose" ] \
+             && curl -fsS --max-time 120 "$API_BASE_URL/api/stocks/hose-symbols" \
+                  | jq -r '.[].symbol' > symbols.txt \
+             && [ -s symbols.txt ]; then
+            echo "Nguồn: danh sách HOSE đầy đủ."
+          else
+            echo "Nguồn: bảng stocks (danh sách HOSE không lấy được hoặc SOURCE=db)."
+            curl -fsS --max-time 120 "$API_BASE_URL/api/stocks" \
+              | jq -r '.[].symbol' > symbols.txt
+          fi
           echo "Sẽ đồng bộ $(wc -l < symbols.txt) mã."
+        env:
+          SOURCE: ${{ inputs.source || 'hose' }}
 
       - name: Đồng bộ từng mã
         env:
           YEARS: ${{ inputs.years || '1' }}
-          DELAY: ${{ inputs.delay || '1' }}
+          DELAY: ${{ inputs.delay || '2' }}
         run: |
           total=$(wc -l < symbols.txt)
           ok=0; failed=0; i=0

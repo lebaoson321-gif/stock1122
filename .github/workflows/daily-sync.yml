@@ -1,0 +1,102 @@
+# Đồng bộ giá hằng ngày cho mọi mã đã có trong DB.
+#
+# Vì sao dùng GitHub Actions thay vì scheduler trong backend: Render gói
+# miễn phí cho service "ngủ" sau 15 phút không có traffic nên APScheduler
+# (RUN_SCHEDULER=true) không chạy được job nền — xem README mục Deploy.
+# Actions gọi HTTP từ ngoài vào nên vừa đánh thức service vừa kích hoạt
+# sync, không tốn phí (repo public = free minutes).
+#
+# Không gọi POST /sync-defaults (chỉ 10 mã cứng) mà lặp qua GET /api/stocks
+# để phủ hết mã đã sync — mỗi request ngắn, mã nào lỗi thì bỏ qua mã đó
+# thay vì hỏng cả lượt.
+name: Đồng bộ giá hằng ngày
+
+on:
+  schedule:
+    # 09:00 UTC = 16:00 giờ VN, T2-T6 — sau khi HOSE đóng cửa (15:00).
+    - cron: "0 9 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      years:
+        description: "Số năm dữ liệu lấy về mỗi mã (1 là đủ cho cập nhật hằng ngày)"
+        default: "1"
+      delay:
+        description: "Nghỉ bao nhiêu giây giữa 2 mã (tránh bị VCI chặn IP)"
+        default: "1"
+
+concurrency:
+  group: daily-sync
+  cancel-in-progress: false
+
+env:
+  API_BASE_URL: https://stock1122.onrender.com
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - name: Đánh thức backend (Render free tier ngủ sau 15 phút)
+        run: |
+          for i in $(seq 1 10); do
+            if curl -fsS --max-time 120 "$API_BASE_URL/api/health" > /dev/null; then
+              echo "Backend đã sẵn sàng (lần thử $i)."
+              exit 0
+            fi
+            echo "Chưa dậy, thử lại sau 15s (lần $i/10)..."
+            sleep 15
+          done
+          echo "::error::Backend không phản hồi sau 10 lần thử."
+          exit 1
+
+      - name: Lấy danh sách mã cần đồng bộ
+        run: |
+          curl -fsS --max-time 120 "$API_BASE_URL/api/stocks" \
+            | jq -r '.[].symbol' > symbols.txt
+          echo "Sẽ đồng bộ $(wc -l < symbols.txt) mã."
+
+      - name: Đồng bộ từng mã
+        env:
+          YEARS: ${{ inputs.years || '1' }}
+          DELAY: ${{ inputs.delay || '1' }}
+        run: |
+          total=$(wc -l < symbols.txt)
+          ok=0; failed=0; i=0
+          : > failures.txt
+          while read -r symbol; do
+            i=$((i + 1))
+            if curl -fsS --max-time 180 -X POST \
+                 "$API_BASE_URL/api/stocks/$symbol/sync?years=$YEARS" > /dev/null; then
+              ok=$((ok + 1))
+              echo "[$i/$total] $symbol OK"
+            else
+              failed=$((failed + 1))
+              echo "$symbol" >> failures.txt
+              echo "[$i/$total] $symbol LỖI"
+            fi
+            sleep "$DELAY"
+          done < symbols.txt
+
+          {
+            echo "## Kết quả đồng bộ"
+            echo ""
+            echo "- Thành công: **$ok** / $total"
+            echo "- Lỗi: **$failed**"
+            if [ "$failed" -gt 0 ]; then
+              echo ""
+              echo "<details><summary>Mã bị lỗi</summary>"
+              echo ""
+              echo '```'
+              cat failures.txt
+              echo '```'
+              echo ""
+              echo "</details>"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Chỉ báo hỏng cả lượt khi KHÔNG mã nào sync được — vài mã lỗi
+          # lẻ tẻ (mã mới niêm yết, tạm ngừng giao dịch) là bình thường.
+          if [ "$ok" -eq 0 ]; then
+            echo "::error::Không mã nào đồng bộ được."
+            exit 1
+          fi

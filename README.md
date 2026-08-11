@@ -116,7 +116,7 @@ npm run dev
 | Data Collection — lịch sử giá qua vnstock | **Đã xác nhận với dữ liệu thật** — đồng bộ thành công 1306 dòng giá FPT qua backend deploy trên Render, kết nối Supabase Postgres thật |
 | Data Collection — realtime price board | Đã port từ `legacy/realtime-poller`, đã test cấu trúc; chưa xác nhận với dữ liệu thật (chưa gọi tới trong quá trình deploy) |
 | Data Collection — danh sách mã + đồng bộ hàng loạt | Đã có trang danh sách mã + nút đồng bộ 10 mã phổ biến (`POST /sync-defaults`), không cần gõ tìm thủ công |
-| Data Collection — scheduler định kỳ | Đã cài đặt (APScheduler, advisory lock chống double-run, `data_sync_log`), đã test cục bộ; **`RUN_SCHEDULER=false`** trên backend đang deploy — chưa tự động sync hằng ngày, cần bật thêm service `worker` (xem mục Deploy) |
+| Data Collection — scheduler định kỳ | Đã cài đặt (APScheduler, advisory lock chống double-run, `data_sync_log`), đã test cục bộ; **`RUN_SCHEDULER=false`** trên backend đang deploy vì Render gói miễn phí cho service ngủ sau 15 phút — thay bằng GitHub Actions gọi HTTP từ ngoài vào, xem `.github/workflows/daily-sync.yml` |
 | Data Storage — schema Postgres, upsert chống trùng | Đã test đầy đủ trên Postgres thật (migration, composite index, upsert idempotent), đã chạy migration thật trên Supabase project của bạn |
 | Data Storage — RLS watchlist | Đã cài đặt và test đúng bằng role `app_backend`; **deployment thật đang dùng role `postgres`** (theo lựa chọn của bạn) nên RLS chưa thực sự enforce ở đó — chỉ còn lớp kiểm tra ownership trong code |
 | Data Processing — MA/EMA/RSI/MACD/Bollinger | Đã test trên Postgres thật, đã xác nhận đúng với dữ liệu FPT thật |
@@ -154,9 +154,19 @@ npm run dev
   Analysis Engine lẫn AI Module chưa có job tự động — điểm chấm tự tính
   lại mỗi lần sync, nhưng dự đoán AI cần chạy tay `train.py`/`predict.py`
   (xem `services/ai/README.md`).
-- Scheduler tự động sync hằng ngày chưa bật trên deployment thật
-  (`RUN_SCHEDULER=false`) — cần thêm service `worker` riêng nếu muốn dữ
-  liệu tự cập nhật (xem mục Deploy).
+- Scheduler trong backend (`RUN_SCHEDULER`) chưa bật trên deployment thật
+  vì Render gói miễn phí cho service ngủ sau 15 phút không có traffic nên
+  job nền không chạy được. Thay vào đó dùng **GitHub Actions**
+  (`.github/workflows/daily-sync.yml`) gọi HTTP từ ngoài vào lúc 16:00 giờ
+  VN các ngày T2-T6: đánh thức service rồi lặp `POST /{symbol}/sync` cho
+  mọi mã trong DB. Muốn dùng scheduler thật (đúng kiến trúc đã xây) thì
+  cần nâng Render lên gói trả phí + thêm service `worker` (xem mục Deploy).
+- Dự đoán AI **không** nằm trong job tự động này — vẫn phải chạy tay
+  `train.py`/`predict.py` (xem `services/ai/README.md`).
+- Các endpoint `POST /{symbol}/sync` và `/sync-defaults` hiện **không yêu
+  cầu xác thực** — ai biết URL backend cũng gọi được. Chấp nhận được ở
+  quy mô hiện tại (chỉ tốn tài nguyên, không lộ dữ liệu riêng tư), nhưng
+  nên thêm API key nếu mở rộng.
 - RLS trên watchlist chưa thực sự enforce ở deployment thật (đang dùng
   role `postgres` thay vì `app_backend`) — chỉ còn lớp kiểm tra ownership
   ở code backend.

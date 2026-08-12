@@ -197,12 +197,23 @@ class VnstockAdapter(MarketDataProvider):
         # nơi cách này đã cứu được một lần vnstock đổi schema.
         profile = _first_present(merged, ["company_profile", "profile", "business_strategies"])
         industry = _first_present(merged, ["industry", "icb_name3", "icb_name2", "sector"])
+
+        pe_value = num(["pe", "price_to_earning", "p_e"])
+        eps_value = num(["eps", "earning_per_share", "basic_eps"])
+        if eps_value is None and pe_value:
+            # overview()/ratio_summary() của VCI không có cột EPS trực
+            # tiếp (đã kiểm chứng bằng dữ liệu thật, không phải do đoán
+            # sai tên cột) — suy ra từ PE = current_price / EPS.
+            price_value = num(["current_price", "price", "close_price"])
+            if price_value is not None:
+                eps_value = price_value / pe_value
+
         return CompanyFundamentals(
             symbol=symbol,
             market_cap=num(["market_cap", "marketcap", "market_capital"]),
-            pe=num(["pe", "price_to_earning", "p_e"]),
+            pe=pe_value,
             pb=num(["pb", "price_to_book", "p_b"]),
-            eps=num(["eps", "earning_per_share", "basic_eps"]),
+            eps=eps_value,
             roe=num(["roe", "return_on_equity"]),
             roa=num(["roa", "return_on_asset"]),
             dividend_yield=num(["dividend_yield", "dividend"]),

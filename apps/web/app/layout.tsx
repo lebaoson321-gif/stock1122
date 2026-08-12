@@ -23,6 +23,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               <Link href="/watchlist" className="hover:text-neutral-100">
                 Watchlist
               </Link>
+              <Link href="/portfolio" className="hover:text-neutral-100">
+                Danh mục ảo
+              </Link>
             </nav>
           </div>
         </header>

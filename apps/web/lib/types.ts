@@ -97,3 +97,54 @@ export interface WatchlistOut {
   name: string;
   items: WatchlistItemOut[];
 }
+
+export interface PositionOut {
+  stock_id: number;
+  symbol: string;
+  company_name: string;
+  quantity: number;
+  /** Nghìn VND/cp — cùng đơn vị giá trên biểu đồ. */
+  avg_cost: number;
+  current_price: number | null;
+  price_source: string | null;
+  /** VND */
+  market_value: number | null;
+  cost_value: number;
+  pnl: number | null;
+  pnl_pct: number | null;
+}
+
+export interface PortfolioOut {
+  id: number;
+  available?: true;
+  initial_capital: number;
+  cash_balance: number;
+  positions: PositionOut[];
+  holdings_value: number;
+  total_value: number;
+  total_pnl: number;
+  total_pnl_pct: number;
+}
+
+export interface PortfolioMissing {
+  available: false;
+  message: string;
+}
+
+export type PortfolioResult = PortfolioOut | PortfolioMissing;
+
+export interface TransactionOut {
+  id: number;
+  symbol: string;
+  side: "buy" | "sell";
+  quantity: number;
+  price: number;
+  amount: number;
+  price_source: string;
+  executed_at: string;
+}
+
+export interface OrderResult {
+  transaction: TransactionOut;
+  portfolio: PortfolioOut;
+}

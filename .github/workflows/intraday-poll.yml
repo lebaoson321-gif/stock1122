@@ -1,0 +1,52 @@
+# Poll giá khớp trong phiên, để mua/bán ảo khớp theo giá đang chạy chứ
+# không phải giá đóng cửa hôm trước.
+#
+# GIỚI HẠN THẬT CẦN BIẾT: GitHub Actions không đảm bảo đúng giờ — lịch
+# cron ở đây là "sớm nhất có thể", lúc hệ thống bận có thể trễ vài phút
+# hoặc bỏ qua hẳn một nhịp. Vậy nên độ trễ dữ liệu thực tế dao động
+# khoảng 5-20 phút, KHÔNG đạt mức "trễ dưới 5 phút" của bảng giá chuyên
+# nghiệp. Muốn chặt hơn thì phải chạy tiến trình poll liên tục trên máy
+# chủ trả phí (RUN_SCHEDULER=true, xem apps/api/README.md).
+name: Poll giá trong phiên
+
+on:
+  schedule:
+    # HOSE giao dịch 09:00-15:00 giờ VN = 02:00-08:00 UTC, T2-T6.
+    # Mỗi 10 phút trong khung đó.
+    - cron: "*/10 2-8 * * 1-5"
+  workflow_dispatch:
+
+concurrency:
+  group: intraday-poll
+  # Nhịp sau không cần xếp hàng chờ nhịp trước: dữ liệu mới luôn thay thế
+  # dữ liệu cũ, chạy chồng chỉ tổ tốn thời gian.
+  cancel-in-progress: true
+
+env:
+  API_BASE_URL: https://stock1122.onrender.com
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Poll bảng giá
+        run: |
+          # Render gói miễn phí ngủ sau 15 phút; nhịp poll 10 phút thường
+          # giữ service luôn thức, nhưng nhịp đầu phiên vẫn có thể gặp
+          # service đang ngủ nên cho timeout rộng.
+          response=$(curl -sS --max-time 300 -w '\n%{http_code}' \
+            -X POST "$API_BASE_URL/api/stocks/poll-realtime")
+          body=$(echo "$response" | head -n -1)
+          code=$(echo "$response" | tail -n 1)
+
+          echo "HTTP $code"
+          echo "$body"
+
+          if [ "$code" != "200" ]; then
+            echo "::error::Poll thất bại (HTTP $code)."
+            exit 1
+          fi
+
+          echo "$body" | jq -r '"Đã ghi \(.rows_synced) bản ghi cho \(.symbols_requested) mã (\(.failed_batches) lô lỗi)."' \
+            >> "$GITHUB_STEP_SUMMARY"

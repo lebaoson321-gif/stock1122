@@ -9,7 +9,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import analysis, health, history, internal, predictions, stocks, sync, watchlist
+from app.routers import (
+    analysis,
+    health,
+    history,
+    internal,
+    portfolio,
+    predictions,
+    stocks,
+    sync,
+    watchlist,
+)
 from app.scheduler import shutdown_scheduler, start_scheduler
 
 settings = get_settings()
@@ -49,4 +59,5 @@ app.include_router(sync.router)
 app.include_router(analysis.router)
 app.include_router(predictions.router)
 app.include_router(watchlist.router)
+app.include_router(portfolio.router)
 app.include_router(internal.router)

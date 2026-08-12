@@ -59,6 +59,13 @@ class SyncResult(BaseModel):
     message: str
 
 
+class PollResult(BaseModel):
+    symbols_requested: int
+    rows_synced: int
+    failed_batches: int
+    message: str
+
+
 class ScoreResponse(BaseModel):
     symbol: str
     available: bool = True

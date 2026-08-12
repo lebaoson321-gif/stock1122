@@ -5,6 +5,7 @@ import AIPredictionCard from "@/components/AIPredictionCard";
 import CandlestickChart from "@/components/CandlestickChart";
 import { MacdPanel, RsiPanel } from "@/components/IndicatorPanel";
 import ScoreCard from "@/components/ScoreCard";
+import TradePanel from "@/components/TradePanel";
 import WatchlistButton from "@/components/WatchlistButton";
 import { api } from "@/lib/api";
 import type { AnalysisResponse, PredictionResult, PricePoint, ScoreResult } from "@/lib/types";
@@ -151,7 +152,10 @@ export default function StockPage({ params }: { params: { symbol: string } }) {
           </div>
           <CandlestickChart data={history} />
         </div>
-        <AIPredictionCard prediction={prediction} />
+        <div className="flex flex-col gap-5">
+          <TradePanel symbol={symbol} referencePrice={analysis.close} />
+          <AIPredictionCard prediction={prediction} />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">

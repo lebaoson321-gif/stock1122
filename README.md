@@ -125,6 +125,8 @@ npm run dev
 | Dashboard — candlestick + chỉ báo + điểm chấm + AI prediction | Đã test bằng browser thật (Playwright) và trên deployment Vercel thật, render đúng với dữ liệu thật từ backend |
 | Dashboard — tìm kiếm + danh sách mã | Đã test, hoạt động đúng trên deployment thật |
 | Dashboard — watchlist + đăng nhập | Đã deploy thật (Vercel + Supabase Auth); cần xác nhận email trước khi đăng nhập lần đầu (Supabase mặc định bật "Confirm email") |
+| Giao dịch ảo (paper trading) | **Đã triển khai** — tiền ảo tự đặt mức, mua/bán theo giá thị trường, giá vốn bình quân, lãi/lỗ theo thời gian thực, lịch sử lệnh, nút làm lại. Đã test 47 trường hợp trên Postgres thật gồm cách ly RLS giữa 2 user. Luật mô phỏng ở mức đơn giản (xem "Giới hạn đã biết") |
+| Giá trong phiên | Job GitHub Actions poll bảng giá mỗi 10 phút trong giờ giao dịch (`.github/workflows/intraday-poll.yml`); ngoài giờ hoặc khi dữ liệu quá cũ thì tự lùi về giá đóng cửa gần nhất |
 
 ## Deploy
 
@@ -167,9 +169,29 @@ npm run dev
   cầu xác thực** — ai biết URL backend cũng gọi được. Chấp nhận được ở
   quy mô hiện tại (chỉ tốn tài nguyên, không lộ dữ liệu riêng tư), nhưng
   nên thêm API key nếu mở rộng.
-- RLS trên watchlist chưa thực sự enforce ở deployment thật (đang dùng
-  role `postgres` thay vì `app_backend`) — chỉ còn lớp kiểm tra ownership
-  ở code backend.
+- RLS trên watchlist **và danh mục giao dịch ảo** chưa thực sự enforce ở
+  deployment thật (đang dùng role `postgres` thay vì `app_backend`) —
+  chỉ còn lớp kiểm tra ownership ở code backend. RLS đã được kiểm chứng
+  hoạt động đúng khi dùng `app_backend` (chặn cả đọc, tạo hộ người khác
+  lẫn sửa tiền của người khác), nhưng để có hiệu lực trên deployment thì
+  phải đặt password cho role đó và đổi `DATABASE_URL`.
+- **Giao dịch ảo mô phỏng ở mức đơn giản**, không giống hệt HOSE: mua bán
+  số lượng bất kỳ (không bắt lô chẵn 100), không phí giao dịch, không
+  thuế bán 0.1%, không T+2, giao dịch được cả ngoài giờ. Lãi/lỗ vì vậy
+  lạc quan hơn thực tế. Muốn siết lại thì sửa
+  `apps/api/app/services/trading.py` — router chỉ gọi `execute_order()`
+  nên không phải sửa chỗ khác.
+- **Độ trễ giá trong phiên khoảng 5-20 phút**, chưa đạt chuẩn bảng giá
+  chuyên nghiệp (dưới 5 phút). Nguyên nhân: GitHub Actions không đảm bảo
+  chạy đúng giờ — lịch cron là "sớm nhất có thể", lúc hệ thống bận có thể
+  trễ hoặc bỏ nhịp. Muốn chặt hơn phải chạy tiến trình poll liên tục trên
+  máy chủ trả phí (`RUN_SCHEDULER=true`).
+- Đơn vị giá của bảng giá realtime (VCI) chưa xác minh được bằng dữ liệu
+  thật. `services/pricing.py` xử lý phòng thủ: quy giá realtime về cùng
+  đơn vị với giá đóng cửa gần nhất và **bỏ hẳn giá đó nếu lệch quá 30%**
+  thay vì dùng một con số có thể sai đơn vị 1000 lần. Nên kiểm tra lại
+  cột `price_source` trong lịch sử lệnh sau vài phiên đầu để chắc chắn
+  giá "realtime" thực sự được dùng chứ không phải luôn lùi về "close".
 
 ## Mã cũ (`legacy/`)
 

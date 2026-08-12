@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import AIPredictionCard from "@/components/AIPredictionCard";
 import CandlestickChart from "@/components/CandlestickChart";
@@ -177,7 +178,12 @@ export default function StockPage({ params }: { params: { symbol: string } }) {
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
         <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">RSI (14)</div>
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">RSI (14)</span>
+            <Link href="/huong-dan#chi-bao" className="text-[11px] text-neutral-600 hover:text-emerald-400" title="RSI nghĩa là gì?">
+              ?
+            </Link>
+          </div>
           <RsiPanel data={history} />
           <div className="mt-2 flex justify-between text-xs">
             <span className="text-neutral-500">Hiện tại</span>
@@ -193,7 +199,12 @@ export default function StockPage({ params }: { params: { symbol: string } }) {
         </div>
 
         <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">MACD</div>
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">MACD</span>
+            <Link href="/huong-dan#chi-bao" className="text-[11px] text-neutral-600 hover:text-emerald-400" title="MACD nghĩa là gì?">
+              ?
+            </Link>
+          </div>
           <MacdPanel data={history} />
           <div className="mt-2 flex justify-between text-xs">
             <span className="text-neutral-500">Tín hiệu</span>

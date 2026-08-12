@@ -124,6 +124,7 @@ npm run dev
 | AI Module (Random Forest) | **Đã triển khai thật** — `services/ai/train.py` + `predict.py` chạy được end-to-end, ghi vào `ai_predictions`, `GET /prediction` đọc và trả về đúng; đã test trên Postgres local. **Cần bạn tự chạy `train.py`/`predict.py` trên dữ liệu Supabase thật** — chưa chạy tự động, chưa có trên deployment hiện tại. XGBoost/LSTM còn scaffold, xem `services/ai/README.md` |
 | Dashboard — candlestick + chỉ báo + điểm chấm + AI prediction | Đã test bằng browser thật (Playwright) và trên deployment Vercel thật, render đúng với dữ liệu thật từ backend |
 | Dashboard — Bollinger Bands | Đã vẽ (nút bật/tắt trên biểu đồ giá). Chỉ vẽ dải trên/dưới vì dải giữa chính là MA20 — cùng công thức, vẽ thêm sẽ trùng khít |
+| Hướng dẫn chứng khoán cơ bản | Trang `/huong-dan`: luật giao dịch HOSE, cách đọc biểu đồ nến, bảng tín hiệu tốt/xấu + cạm bẫy cho từng chỉ báo và chỉ số, yếu tố ảnh hưởng giá, sai lầm người mới, và giới hạn thật của chính công cụ này. Thẻ RSI/MACD có link "?" trỏ thẳng tới mục giải thích |
 | Thông tin tài chính doanh nghiệp | Vốn hoá, P/E, P/B, EPS, ROE, ROA, cổ tức, SL lưu hành, vốn điều lệ, giới thiệu công ty. Cache 7 ngày trong DB, tự nạp lại khi thiếu/quá cũ. **Tên trường của VCI chưa kiểm chứng bằng dữ liệu thật** — xem "Giới hạn đã biết" |
 | Dashboard — tìm kiếm + danh sách mã | Đã test, hoạt động đúng trên deployment thật |
 | Dashboard — watchlist + đăng nhập | Đã deploy thật (Vercel + Supabase Auth); cần xác nhận email trước khi đăng nhập lần đầu (Supabase mặc định bật "Confirm email") |

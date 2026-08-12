@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.routers import (
     analysis,
+    fundamentals,
     health,
     history,
     internal,
@@ -57,6 +58,7 @@ app.include_router(stocks.router)
 app.include_router(history.router)
 app.include_router(sync.router)
 app.include_router(analysis.router)
+app.include_router(fundamentals.router)
 app.include_router(predictions.router)
 app.include_router(watchlist.router)
 app.include_router(portfolio.router)

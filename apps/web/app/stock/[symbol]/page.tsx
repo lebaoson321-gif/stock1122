@@ -3,12 +3,19 @@
 import { useEffect, useState } from "react";
 import AIPredictionCard from "@/components/AIPredictionCard";
 import CandlestickChart from "@/components/CandlestickChart";
+import FundamentalsCard from "@/components/FundamentalsCard";
 import { MacdPanel, RsiPanel } from "@/components/IndicatorPanel";
 import ScoreCard from "@/components/ScoreCard";
 import TradePanel from "@/components/TradePanel";
 import WatchlistButton from "@/components/WatchlistButton";
 import { api } from "@/lib/api";
-import type { AnalysisResponse, PredictionResult, PricePoint, ScoreResult } from "@/lib/types";
+import type {
+  AnalysisResponse,
+  FundamentalsResult,
+  PredictionResult,
+  PricePoint,
+  ScoreResult,
+} from "@/lib/types";
 
 type Status = "loading" | "ready" | "error";
 
@@ -43,6 +50,7 @@ export default function StockPage({ params }: { params: { symbol: string } }) {
   const [prediction, setPrediction] = useState<PredictionResult>({
     symbol, available: false, message: "Đang tải…",
   });
+  const [fundamentals, setFundamentals] = useState<FundamentalsResult | null>(null);
   const [status, setStatus] = useState<Status>("loading");
   const [errorMsg, setErrorMsg] = useState("");
   const [retryKey, setRetryKey] = useState(0);
@@ -87,6 +95,15 @@ export default function StockPage({ params }: { params: { symbol: string } }) {
       })
       .catch(() => {
         if (!cancelled) setPrediction({ symbol, available: false, message: "Không tải được dự đoán." });
+      });
+    api
+      .getFundamentals(symbol)
+      .then((f) => {
+        if (!cancelled) setFundamentals(f);
+      })
+      .catch(() => {
+        if (!cancelled)
+          setFundamentals({ symbol, available: false, message: "Không tải được thông tin doanh nghiệp." });
       });
     return () => {
       cancelled = true;
@@ -192,6 +209,8 @@ export default function StockPage({ params }: { params: { symbol: string } }) {
 
         <ScoreCard score={score} />
       </div>
+
+      <FundamentalsCard data={fundamentals} />
     </div>
   );
 }

@@ -1,0 +1,98 @@
+"""
+Chỉ số cơ bản doanh nghiệp — đọc cache trong DB, tự nạp lại khi thiếu
+hoặc quá cũ (xem models/fundamentals.py về lý do cache).
+"""
+from datetime import datetime, timedelta, timezone
+
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import Session
+
+from app.collectors.factory import get_market_data_provider
+from app.db import get_db
+from app.models.fundamentals import CompanyFundamentals
+from app.routers.common import get_stock_or_404
+from app.schemas.fundamentals import FundamentalsResponse, FundamentalsUnavailable
+
+router = APIRouter(prefix="/api/stocks", tags=["fundamentals"])
+
+# Chỉ số cơ bản đổi theo quý — 7 ngày là đủ tươi, mà vẫn tránh gọi
+# provider liên tục.
+CACHE_TTL = timedelta(days=7)
+
+_STORED_FIELDS = (
+    "market_cap", "pe", "pb", "eps", "roe", "roa",
+    "dividend_yield", "issue_share", "charter_capital",
+    "company_profile", "industry", "raw",
+)
+
+
+def _fetch_and_store(db: Session, stock_id: int, symbol: str) -> CompanyFundamentals | None:
+    provider = get_market_data_provider()
+    try:
+        data = provider.get_company_fundamentals(symbol)
+    except Exception:  # noqa: BLE001 — provider không chính thức, lỗi là chuyện thường
+        return None
+
+    values = {field: getattr(data, field) for field in _STORED_FIELDS}
+    if all(v is None for v in values.values()):
+        # Không moi được gì — đừng ghi một dòng rỗng rồi cache nó suốt 7
+        # ngày; để lần sau thử lại.
+        return None
+
+    values["fetched_at"] = datetime.now(timezone.utc)
+    stmt = (
+        insert(CompanyFundamentals)
+        .values(stock_id=stock_id, **values)
+        .on_conflict_do_update(index_elements=["stock_id"], set_=values)
+        .returning(CompanyFundamentals)
+    )
+    row = db.execute(stmt).scalar_one()
+    db.commit()
+    return row
+
+
+@router.get(
+    "/{symbol}/fundamentals",
+    response_model=FundamentalsResponse | FundamentalsUnavailable,
+)
+def get_fundamentals(
+    symbol: str,
+    refresh: bool = Query(False, description="Bỏ qua cache, lấy lại từ provider"),
+    db: Session = Depends(get_db),
+):
+    stock = get_stock_or_404(db, symbol)
+
+    cached = db.execute(
+        select(CompanyFundamentals).where(CompanyFundamentals.stock_id == stock.id)
+    ).scalar_one_or_none()
+
+    stale = cached is None or datetime.now(timezone.utc) - cached.fetched_at > CACHE_TTL
+    if refresh or stale:
+        fresh = _fetch_and_store(db, stock.id, stock.symbol)
+        if fresh is not None:
+            cached = fresh
+        # Nếu nạp mới thất bại mà vẫn còn cache cũ: trả cache cũ kèm
+        # fetched_at để UI tự nói rõ dữ liệu cũ từ bao giờ — vẫn hơn là
+        # báo lỗi và không hiện gì.
+
+    if cached is None:
+        return FundamentalsUnavailable(symbol=stock.symbol)
+
+    return FundamentalsResponse(
+        symbol=stock.symbol,
+        company_name=stock.company_name,
+        market_cap=cached.market_cap,
+        pe=cached.pe,
+        pb=cached.pb,
+        eps=cached.eps,
+        roe=cached.roe,
+        roa=cached.roa,
+        dividend_yield=cached.dividend_yield,
+        issue_share=cached.issue_share,
+        charter_capital=cached.charter_capital,
+        company_profile=cached.company_profile,
+        industry=cached.industry or stock.sector or None,
+        fetched_at=cached.fetched_at,
+    )

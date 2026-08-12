@@ -12,28 +12,33 @@ class PortfolioCreate(BaseModel):
     initial_capital: Decimal = Field(gt=0, le=Decimal("1e15"))
 
 
+# Đầu RA dùng float, KHÔNG dùng Decimal: Pydantic serialize Decimal thành
+# CHUỖI JSON ("18.4200"), khiến frontend gọi toLocaleString() lên chuỗi và
+# in ra số thô chưa định dạng (đã gặp thật). Độ chính xác Decimal vẫn được
+# giữ ở DB và ở services/trading.py — đây chỉ là bề mặt hiển thị, và số
+# tiền VND còn xa giới hạn an toàn của số thực JS (2^53).
 class PositionOut(BaseModel):
     stock_id: int
     symbol: str
     company_name: str
     quantity: int
-    avg_cost: Decimal  # nghìn VND/cp, cùng đơn vị giá hiển thị trên biểu đồ
-    current_price: Decimal | None
+    avg_cost: float  # nghìn VND/cp, cùng đơn vị giá hiển thị trên biểu đồ
+    current_price: float | None
     price_source: str | None
-    market_value: Decimal | None  # VND
-    cost_value: Decimal  # VND
-    pnl: Decimal | None  # VND
+    market_value: float | None  # VND
+    cost_value: float  # VND
+    pnl: float | None  # VND
     pnl_pct: float | None
 
 
 class PortfolioOut(BaseModel):
     id: int
-    initial_capital: Decimal
-    cash_balance: Decimal
+    initial_capital: float
+    cash_balance: float
     positions: list[PositionOut] = []
-    holdings_value: Decimal  # tổng giá trị thị trường số cổ đang nắm (VND)
-    total_value: Decimal  # tiền mặt + holdings_value (VND)
-    total_pnl: Decimal  # total_value - initial_capital (VND)
+    holdings_value: float  # tổng giá trị thị trường số cổ đang nắm (VND)
+    total_value: float  # tiền mặt + holdings_value (VND)
+    total_pnl: float  # total_value - initial_capital (VND)
     total_pnl_pct: float
 
 
@@ -58,8 +63,8 @@ class TransactionOut(BaseModel):
     symbol: str
     side: str
     quantity: int
-    price: Decimal
-    amount: Decimal
+    price: float
+    amount: float
     price_source: str
     executed_at: datetime
 

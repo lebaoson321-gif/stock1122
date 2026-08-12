@@ -13,7 +13,14 @@ from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
-from app.collectors.base import CompanyInfo, ListedSymbol, MarketDataProvider, PriceBar, PriceBoardQuote
+from app.collectors.base import (
+    CompanyFundamentals,
+    CompanyInfo,
+    ListedSymbol,
+    MarketDataProvider,
+    PriceBar,
+    PriceBoardQuote,
+)
 
 # vnstock trả cột "exchange" (đổi tên từ "board" của VCI) với các giá trị
 # đã gặp thực tế là "HOSE" hoặc "HSX" tuỳ phiên bản API — chấp nhận cả 2.
@@ -151,3 +158,57 @@ class VnstockAdapter(MarketDataProvider):
             name = _first_present(row_dict, ["organ_name", "organ_short_name"]) or symbol
             symbols.append(ListedSymbol(symbol=str(symbol), company_name=str(name)))
         return sorted(symbols, key=lambda s: s.symbol)
+
+    def get_company_fundamentals(self, symbol: str) -> CompanyFundamentals:
+        from vnstock import Vnstock
+
+        symbol = symbol.upper()
+        company = Vnstock().stock(symbol=symbol, source="VCI").company
+        merged: dict = {}
+
+        # Gộp 2 nguồn: overview (hồ sơ doanh nghiệp) + ratio_summary (chỉ
+        # số tài chính). Mỗi nguồn hỏng độc lập — thiếu một nguồn vẫn trả
+        # về phần lấy được, vì với người dùng "thiếu vài chỉ số" tốt hơn
+        # hẳn "không có gì".
+        for fetch in (lambda: company.overview(), lambda: company.ratio_summary()):
+            try:
+                df = fetch()
+            except Exception:  # noqa: BLE001
+                continue
+            if df is None or df.empty:
+                continue
+            merged.update({k: _json_safe(v) for k, v in df.iloc[0].to_dict().items()})
+
+        if not merged:
+            return CompanyFundamentals(symbol=symbol)
+
+        def num(candidates: list[str]) -> float | None:
+            value = _first_present(merged, candidates)
+            if value is None:
+                return None
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        # Tên trường của VCI chưa kiểm chứng được bằng dữ liệu thật (API
+        # chỉ lộ tên cột lúc gọi thật). Dò theo nhiều tên khả dĩ thay vì
+        # cố định một tên — cùng lý do với _first_present ở price board,
+        # nơi cách này đã cứu được một lần vnstock đổi schema.
+        profile = _first_present(merged, ["company_profile", "profile", "business_strategies"])
+        industry = _first_present(merged, ["industry", "icb_name3", "icb_name2", "sector"])
+        return CompanyFundamentals(
+            symbol=symbol,
+            market_cap=num(["market_cap", "marketcap", "market_capital"]),
+            pe=num(["pe", "price_to_earning", "p_e"]),
+            pb=num(["pb", "price_to_book", "p_b"]),
+            eps=num(["eps", "earning_per_share", "basic_eps"]),
+            roe=num(["roe", "return_on_equity"]),
+            roa=num(["roa", "return_on_asset"]),
+            dividend_yield=num(["dividend_yield", "dividend"]),
+            issue_share=num(["issue_share", "number_of_shares_mkt_cap", "outstanding_share"]),
+            charter_capital=num(["charter_capital", "chartercapital"]),
+            company_profile=str(profile) if profile else None,
+            industry=str(industry) if industry else None,
+            raw=merged,
+        )

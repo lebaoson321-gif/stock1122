@@ -148,3 +148,29 @@ export interface OrderResult {
   transaction: TransactionOut;
   portfolio: PortfolioOut;
 }
+
+export interface FundamentalsResponse {
+  symbol: string;
+  available: true;
+  company_name: string;
+  market_cap: number | null;
+  pe: number | null;
+  pb: number | null;
+  eps: number | null;
+  roe: number | null;
+  roa: number | null;
+  dividend_yield: number | null;
+  issue_share: number | null;
+  charter_capital: number | null;
+  company_profile: string | null;
+  industry: string | null;
+  fetched_at: string;
+}
+
+export interface FundamentalsUnavailable {
+  symbol: string;
+  available: false;
+  message: string;
+}
+
+export type FundamentalsResult = FundamentalsResponse | FundamentalsUnavailable;

@@ -49,6 +49,30 @@ class ListedSymbol:
     company_name: str
 
 
+@dataclass
+class CompanyFundamentals:
+    """Chỉ số cơ bản của doanh nghiệp. MỌI trường đều optional: provider
+    là API không chính thức, tên trường có thể đổi hoặc thiếu tuỳ mã (mã
+    mới niêm yết thường chưa có P/E, ngân hàng không có cùng bộ chỉ số
+    với doanh nghiệp sản xuất). UI phải hiển thị được khi thiếu trường."""
+
+    symbol: str
+    market_cap: float | None = None  # VND
+    pe: float | None = None
+    pb: float | None = None
+    eps: float | None = None  # VND/cp
+    roe: float | None = None  # %
+    roa: float | None = None  # %
+    dividend_yield: float | None = None  # %
+    issue_share: float | None = None  # số cp đang lưu hành
+    charter_capital: float | None = None  # VND
+    company_profile: str | None = None
+    industry: str | None = None
+    # Toàn bộ dữ liệu thô đã lấy được — giữ lại để chẩn đoán khi provider
+    # đổi tên trường (cùng lý do với RealtimeQuote.raw).
+    raw: dict | None = None
+
+
 class MarketDataProvider(Protocol):
     """Interface chuẩn hoá — implementation không được để lộ kiểu dữ liệu
     thô (DataFrame, tên cột) của provider cụ thể ra ngoài."""
@@ -60,3 +84,5 @@ class MarketDataProvider(Protocol):
     def get_price_board(self, symbols: list[str]) -> list[PriceBoardQuote]: ...
 
     def list_hose_symbols(self) -> list[ListedSymbol]: ...
+
+    def get_company_fundamentals(self, symbol: str) -> CompanyFundamentals: ...

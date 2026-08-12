@@ -1,7 +1,7 @@
 "use client";
 
-import { ColorType, IChartApi, ISeriesApi, createChart } from "lightweight-charts";
-import { useEffect, useRef } from "react";
+import { ColorType, IChartApi, ISeriesApi, LineStyle, createChart } from "lightweight-charts";
+import { useEffect, useRef, useState } from "react";
 import type { PricePoint } from "@/lib/types";
 
 const COLORS = {
@@ -12,6 +12,7 @@ const COLORS = {
   down: "#F6465D",
   ma20: "#F0B90B",
   ma50: "#C960E8",
+  bb: "#4A9DFF",
 };
 
 interface Props {
@@ -28,6 +29,11 @@ export default function CandlestickChart({ data }: Props) {
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const ma20SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const ma50SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const bbUpperSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const bbLowerSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  // Mặc định tắt: 2 đường MA + 2 dải Bollinger cùng lúc làm biểu đồ rối,
+  // và dải Bollinger chỉ hữu ích khi đang xem biến động/vùng quá mua-bán.
+  const [showBollinger, setShowBollinger] = useState(false);
 
   // Tạo chart đúng 1 lần. React 18 Strict Mode (dev) gọi effect 2 lần
   // (mount -> cleanup -> mount) — cleanup ở đây gọi chart.remove() để
@@ -58,11 +64,20 @@ export default function CandlestickChart({ data }: Props) {
     const ma20Series = chart.addLineSeries({ color: COLORS.ma20, lineWidth: 1, title: "MA20" });
     const ma50Series = chart.addLineSeries({ color: COLORS.ma50, lineWidth: 1, title: "MA50" });
 
+    // Chỉ vẽ dải TRÊN và DƯỚI: dải giữa của Bollinger chính là MA20
+    // (cùng công thức, xem apps/api/app/processing/indicators.py) nên vẽ
+    // thêm sẽ là một đường trùng khít lên MA20.
+    const bbOptions = { color: COLORS.bb, lineWidth: 1 as const, lineStyle: LineStyle.Dashed };
+    const bbUpperSeries = chart.addLineSeries({ ...bbOptions, title: "BB trên" });
+    const bbLowerSeries = chart.addLineSeries({ ...bbOptions, title: "BB dưới" });
+
     chartRef.current = chart;
     candleSeriesRef.current = candleSeries;
     volumeSeriesRef.current = volumeSeries;
     ma20SeriesRef.current = ma20Series;
     ma50SeriesRef.current = ma50Series;
+    bbUpperSeriesRef.current = bbUpperSeries;
+    bbLowerSeriesRef.current = bbLowerSeries;
 
     // Tự đo & resize bằng ResizeObserver thay vì autoSize — autoSize
     // xung đột với việc tự gọi applyOptions({width,height}) và kém tin
@@ -103,10 +118,45 @@ export default function CandlestickChart({ data }: Props) {
     ma50SeriesRef.current?.setData(
       data.filter((d) => d.ma50 !== null).map((d) => ({ time: d.date, value: d.ma50 as number }))
     );
+    bbUpperSeriesRef.current?.setData(
+      data.filter((d) => d.bb_upper !== null).map((d) => ({ time: d.date, value: d.bb_upper as number }))
+    );
+    bbLowerSeriesRef.current?.setData(
+      data.filter((d) => d.bb_lower !== null).map((d) => ({ time: d.date, value: d.bb_lower as number }))
+    );
     chartRef.current?.timeScale().fitContent();
   }, [data]);
 
-  // Container cần height cố định TRƯỚC khi chart mount (client effect),
-  // tránh layout shift lúc trang vừa tải.
-  return <div ref={containerRef} style={{ width: "100%", height: 400 }} />;
+  // Ẩn/hiện bằng `visible` thay vì xoá & tạo lại series: giữ nguyên dữ
+  // liệu đã setData, bật lại không phải nạp lại.
+  useEffect(() => {
+    bbUpperSeriesRef.current?.applyOptions({ visible: showBollinger });
+    bbLowerSeriesRef.current?.applyOptions({ visible: showBollinger });
+  }, [showBollinger]);
+
+  return (
+    <div>
+      <div className="mb-2 flex justify-end">
+        <button
+          onClick={() => setShowBollinger((v) => !v)}
+          aria-pressed={showBollinger}
+          className={`rounded-md border px-2 py-1 text-[11px] transition-colors ${
+            showBollinger
+              ? "border-sky-500 bg-sky-500/10 text-sky-400"
+              : "border-neutral-700 text-neutral-500 hover:text-neutral-300"
+          }`}
+        >
+          Bollinger Bands
+        </button>
+      </div>
+      {/* Container cần height cố định TRƯỚC khi chart mount (client
+          effect), tránh layout shift lúc trang vừa tải. */}
+      <div ref={containerRef} style={{ width: "100%", height: 400 }} />
+      {showBollinger && (
+        <div className="mt-2 text-[10px] text-neutral-600">
+          Dải giữa của Bollinger chính là MA20 (đường vàng) nên không vẽ lặp lại.
+        </div>
+      )}
+    </div>
+  );
 }

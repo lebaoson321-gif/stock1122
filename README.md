@@ -123,6 +123,8 @@ npm run dev
 | Analysis Engine (chấm điểm xu hướng/thanh khoản/biến động) | **Đã triển khai thật** — tự tính lại mỗi lần sync, `GET /score` trả điểm thật; đã test trên Postgres local, dashboard hiển thị đúng |
 | AI Module (Random Forest) | **Đã triển khai thật** — `services/ai/train.py` + `predict.py` chạy được end-to-end, ghi vào `ai_predictions`, `GET /prediction` đọc và trả về đúng; đã test trên Postgres local. **Cần bạn tự chạy `train.py`/`predict.py` trên dữ liệu Supabase thật** — chưa chạy tự động, chưa có trên deployment hiện tại. XGBoost/LSTM còn scaffold, xem `services/ai/README.md` |
 | Dashboard — candlestick + chỉ báo + điểm chấm + AI prediction | Đã test bằng browser thật (Playwright) và trên deployment Vercel thật, render đúng với dữ liệu thật từ backend |
+| Dashboard — Bollinger Bands | Đã vẽ (nút bật/tắt trên biểu đồ giá). Chỉ vẽ dải trên/dưới vì dải giữa chính là MA20 — cùng công thức, vẽ thêm sẽ trùng khít |
+| Thông tin tài chính doanh nghiệp | Vốn hoá, P/E, P/B, EPS, ROE, ROA, cổ tức, SL lưu hành, vốn điều lệ, giới thiệu công ty. Cache 7 ngày trong DB, tự nạp lại khi thiếu/quá cũ. **Tên trường của VCI chưa kiểm chứng bằng dữ liệu thật** — xem "Giới hạn đã biết" |
 | Dashboard — tìm kiếm + danh sách mã | Đã test, hoạt động đúng trên deployment thật |
 | Dashboard — watchlist + đăng nhập | Đã deploy thật (Vercel + Supabase Auth); cần xác nhận email trước khi đăng nhập lần đầu (Supabase mặc định bật "Confirm email") |
 | Giao dịch ảo (paper trading) | **Đã triển khai** — tiền ảo tự đặt mức, mua/bán theo giá thị trường, giá vốn bình quân, lãi/lỗ theo thời gian thực, lịch sử lệnh, nút làm lại. Đã test 47 trường hợp trên Postgres thật gồm cách ly RLS giữa 2 user. Luật mô phỏng ở mức đơn giản (xem "Giới hạn đã biết") |
@@ -186,6 +188,13 @@ npm run dev
   chạy đúng giờ — lịch cron là "sớm nhất có thể", lúc hệ thống bận có thể
   trễ hoặc bỏ nhịp. Muốn chặt hơn phải chạy tiến trình poll liên tục trên
   máy chủ trả phí (`RUN_SCHEDULER=true`).
+- **Tên trường chỉ số tài chính của VCI chưa xác minh bằng dữ liệu thật**
+  (API chỉ lộ tên cột khi gọi thật, sandbox phát triển không gọi được).
+  `collectors/vnstock_adapter.py::get_company_fundamentals` dò theo nhiều
+  tên khả dĩ cho mỗi chỉ số và lưu cả dữ liệu thô vào cột
+  `company_fundamentals.raw`. Nếu thẻ "Thông tin doanh nghiệp" trống hoặc
+  thiếu nhiều chỉ số, hãy xem cột `raw` để biết tên trường thật rồi bổ
+  sung vào danh sách dò — không cần đổi gì khác.
 - Đơn vị giá của bảng giá realtime (VCI) chưa xác minh được bằng dữ liệu
   thật. `services/pricing.py` xử lý phòng thủ: quy giá realtime về cùng
   đơn vị với giá đóng cửa gần nhất và **bỏ hẳn giá đó nếu lệch quá 30%**

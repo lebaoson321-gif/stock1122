@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
+import { useAutoRefresh, useMarketSession } from "@/lib/useMarketSession";
+import { vnDateTime, vnTimeWithSeconds } from "@/lib/vnTime";
 import type { PortfolioOut, PortfolioResult, TransactionOut } from "@/lib/types";
 
 type Status = "loading" | "anonymous" | "no-portfolio" | "ready" | "error";
@@ -32,6 +34,25 @@ export default function PortfolioPage() {
   const [capitalInput, setCapitalInput] = useState("100000000");
   const [errorMsg, setErrorMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [refreshedAt, setRefreshedAt] = useState<Date | null>(null);
+  const session = useMarketSession();
+
+  // Giá đổi thì giá trị danh mục và lãi/lỗ đổi theo — trong phiên thì tự
+  // cập nhật, ngoài giờ giữ nguyên vì không có gì để đổi.
+  useAutoRefresh(session?.is_open, () => {
+    if (!accessToken) return;
+    api
+      .getPortfolio(accessToken)
+      .then((result) => {
+        if (result.available !== false) {
+          setPortfolio(result as PortfolioOut);
+          setRefreshedAt(new Date());
+        }
+      })
+      .catch(() => {
+        // Một nhịp lỗi thì giữ số liệu cũ, không chắn màn hình.
+      });
+  });
 
   function apply(result: PortfolioResult) {
     if (result.available === false) {
@@ -191,7 +212,14 @@ export default function PortfolioPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-mono text-2xl font-bold">Danh mục ảo</h1>
+        <div className="flex items-baseline gap-3">
+          <h1 className="font-mono text-2xl font-bold">Danh mục ảo</h1>
+          {refreshedAt && (
+            <span className="text-[11px] text-neutral-600">
+              cập nhật {vnTimeWithSeconds(refreshedAt)}
+            </span>
+          )}
+        </div>
         <button
           onClick={reset}
           disabled={busy}
@@ -308,7 +336,7 @@ export default function PortfolioPage() {
                 {transactions.map((t) => (
                   <tr key={t.id} className="border-b border-neutral-800/60">
                     <td className="py-2 text-xs text-neutral-400">
-                      {new Date(t.executed_at).toLocaleString("vi-VN")}
+                      {vnDateTime(t.executed_at)}
                     </td>
                     <td className="py-2 font-mono font-bold">{t.symbol}</td>
                     <td className={`py-2 font-mono text-xs font-semibold ${t.side === "buy" ? "text-emerald-400" : "text-red-400"}`}>

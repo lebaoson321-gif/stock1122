@@ -174,3 +174,24 @@ export interface FundamentalsUnavailable {
 }
 
 export type FundamentalsResult = FundamentalsResponse | FundamentalsUnavailable;
+
+export type MarketState =
+  | "pre_open"
+  | "ato"
+  | "morning"
+  | "lunch"
+  | "afternoon"
+  | "atc"
+  | "post"
+  | "closed"
+  | "weekend";
+
+export interface MarketStatus {
+  state: MarketState;
+  label: string;
+  is_open: boolean;
+  is_trading_day: boolean;
+  server_time: string;
+  next_change: string | null;
+  last_quote_at: string | null;
+}

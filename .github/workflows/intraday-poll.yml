@@ -11,9 +11,19 @@ name: Poll giá trong phiên
 
 on:
   schedule:
-    # HOSE giao dịch 09:00-15:00 giờ VN = 02:00-08:00 UTC, T2-T6.
-    # Mỗi 10 phút trong khung đó.
-    - cron: "*/10 2-8 * * 1-5"
+    # Chỉ chạy trong lúc thực sự có khớp lệnh (giờ VN = UTC+7):
+    #   phiên sáng  09:00-11:30 VN = 02:00-04:30 UTC
+    #   phiên chiều 13:00-14:45 VN = 06:00-07:45 UTC
+    # Bỏ hẳn khung nghỉ trưa 11:30-13:00 — giá đứng yên, poll chỉ tốn
+    # request và tăng nguy cơ bị VCI chặn. Backend cũng tự chặn lần nữa
+    # theo giờ thật (routers/sync.py), nên cron chạy trễ cũng không gọi
+    # provider ngoài giờ.
+    - cron: "*/10 2-3 * * 1-5"
+    # 04:25 UTC = 11:25 VN là nhịp cuối phiên sáng; 04:30 sẽ rơi đúng
+    # 11:30 tức lúc nghỉ trưa bắt đầu, backend từ chối nên chỉ tốn 1 lần chạy.
+    - cron: "0,10,20,25 4 * * 1-5"
+    - cron: "*/10 6 * * 1-5"
+    - cron: "0,10,20,30,40 7 * * 1-5"
   workflow_dispatch:
 
 concurrency:

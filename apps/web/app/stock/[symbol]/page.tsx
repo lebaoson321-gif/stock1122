@@ -10,6 +10,8 @@ import ScoreCard from "@/components/ScoreCard";
 import TradePanel from "@/components/TradePanel";
 import WatchlistButton from "@/components/WatchlistButton";
 import { api } from "@/lib/api";
+import { useAutoRefresh, useMarketSession } from "@/lib/useMarketSession";
+import { vnTimeWithSeconds } from "@/lib/vnTime";
 import type {
   AnalysisResponse,
   FundamentalsResult,
@@ -55,6 +57,23 @@ export default function StockPage({ params }: { params: { symbol: string } }) {
   const [status, setStatus] = useState<Status>("loading");
   const [errorMsg, setErrorMsg] = useState("");
   const [retryKey, setRetryKey] = useState(0);
+  const [refreshedAt, setRefreshedAt] = useState<Date | null>(null);
+  const session = useMarketSession();
+
+  // Trong phiên thì giá đổi liên tục -> tải lại số liệu. Ngoài giờ thì
+  // không, vì dữ liệu đứng yên (xem lib/useMarketSession.ts).
+  useAutoRefresh(session?.is_open, () => {
+    Promise.all([api.getHistory(symbol), api.getAnalysis(symbol)])
+      .then(([h, a]) => {
+        setHistory(h);
+        setAnalysis(a);
+        setRefreshedAt(new Date());
+      })
+      .catch(() => {
+        // Giữ nguyên dữ liệu cũ nếu một nhịp làm mới lỗi — tốt hơn là
+        // đá người dùng về màn hình báo lỗi khi trang vẫn đang dùng được.
+      });
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -154,6 +173,11 @@ export default function StockPage({ params }: { params: { symbol: string } }) {
         <span className={`font-mono text-base font-semibold ${analysis.change_pct >= 0 ? "text-emerald-400" : "text-red-400"}`}>
           {analysis.change_pct >= 0 ? "▲" : "▼"} {fmt(Math.abs(analysis.change_pct))}%
         </span>
+        {refreshedAt && (
+          <span className="text-[11px] text-neutral-600">
+            cập nhật {vnTimeWithSeconds(refreshedAt)}
+          </span>
+        )}
         <span
           className={`ml-auto rounded-full px-3 py-1 text-xs font-semibold ${
             trendUp ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"

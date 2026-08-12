@@ -10,6 +10,7 @@ from app.collectors.realtime import poll_and_store_price_board
 from app.db import get_db
 from app.models.sync_log import DataSyncLog
 from app.schemas.stock import PollResult, SyncResult
+from app.services.market_session import get_market_status
 
 router = APIRouter(prefix="/api/stocks", tags=["sync"])
 
@@ -82,6 +83,7 @@ def sync_default_watchlist(years: int = Query(5, ge=1, le=20), db: Session = Dep
 @router.post("/poll-realtime", response_model=PollResult)
 def poll_realtime(
     batch_size: int = Query(50, ge=1, le=200, description="Số mã mỗi lần gọi bảng giá"),
+    force: bool = Query(False, description="Poll cả khi thị trường đang đóng"),
     db: Session = Depends(get_db),
 ):
     """
@@ -98,6 +100,19 @@ def poll_realtime(
     trong một request dễ bị provider từ chối — lô lỗi không làm hỏng lô
     khác.
     """
+    # Ngoài giờ khớp lệnh, bảng giá không đổi — gọi provider chỉ tốn công
+    # và làm tăng nguy cơ bị VCI chặn IP (đã gặp khi đồng bộ hàng loạt).
+    # Job bên ngoài có thể chạy trễ so với lịch nên chặn ở đây, không dựa
+    # vào cron canh đúng giờ.
+    session = get_market_status()  # không đặt tên `status`: trùng với fastapi.status dùng ở trên
+    if not force and not session.is_open:
+        return PollResult(
+            symbols_requested=0,
+            rows_synced=0,
+            failed_batches=0,
+            message=f"Bỏ qua: {session.label}. Dùng ?force=true nếu vẫn muốn poll.",
+        )
+
     provider = get_market_data_provider()
     symbols = list_active_symbols(db)
     started_at = datetime.now(timezone.utc)

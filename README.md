@@ -129,7 +129,8 @@ npm run dev
 | Dashboard — tìm kiếm + danh sách mã | Đã test, hoạt động đúng trên deployment thật |
 | Dashboard — watchlist + đăng nhập | Đã deploy thật (Vercel + Supabase Auth); cần xác nhận email trước khi đăng nhập lần đầu (Supabase mặc định bật "Confirm email") |
 | Giao dịch ảo (paper trading) | **Đã triển khai** — tiền ảo tự đặt mức, mua/bán theo giá thị trường, giá vốn bình quân, lãi/lỗ theo thời gian thực, lịch sử lệnh, nút làm lại. Đã test 47 trường hợp trên Postgres thật gồm cách ly RLS giữa 2 user. Luật mô phỏng ở mức đơn giản (xem "Giới hạn đã biết") |
-| Giá trong phiên | Job GitHub Actions poll bảng giá mỗi 10 phút trong giờ giao dịch (`.github/workflows/intraday-poll.yml`); ngoài giờ hoặc khi dữ liệu quá cũ thì tự lùi về giá đóng cửa gần nhất |
+| Giá trong phiên | Job GitHub Actions poll bảng giá mỗi 10 phút trong giờ giao dịch (`.github/workflows/intraday-poll.yml`, 27 nhịp/ngày, đã bỏ khung nghỉ trưa); ngoài giờ hoặc khi dữ liệu quá cũ thì tự lùi về giá đóng cửa gần nhất |
+| Bám theo phiên giao dịch | `GET /api/market/status` trả trạng thái phiên HOSE (ATO / sáng / nghỉ trưa / chiều / ATC / thoả thuận / đóng / cuối tuần) tính theo giờ VN ở **backend**, không để trình duyệt tự tính. Web hiện badge trạng thái ở thanh trên; trang mã và trang danh mục **tự làm mới mỗi 60 giây khi đang khớp lệnh**, dừng hẳn ngoài giờ và khi tab bị ẩn. Endpoint poll cũng tự từ chối chạy ngoài giờ (`?force=true` để ép). Đã test 22 mốc giờ gồm quy đổi múi giờ |
 
 ## Deploy
 

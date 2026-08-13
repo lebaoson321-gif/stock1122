@@ -14,6 +14,7 @@ from app.db import get_db
 from app.models.fundamentals import CompanyFundamentals
 from app.routers.common import get_stock_or_404
 from app.schemas.fundamentals import FundamentalsResponse, FundamentalsUnavailable
+from app.services.fundamentals_math import normalise_profitability
 from app.services.pricing import get_current_price
 from app.services.trading import PRICE_UNIT_VND
 
@@ -102,15 +103,25 @@ def get_fundamentals(
     if cached is None:
         return FundamentalsUnavailable(symbol=stock.symbol)
 
+    pe = float(cached.pe) if cached.pe is not None else None
+    pb = float(cached.pb) if cached.pb is not None else None
+    # Đơn vị ROE/ROA của provider không xác định được từ chính nó — suy ra
+    # bằng đẳng thức ROE = P/B ÷ P/E, xem services/fundamentals_math.py.
+    roe, roa = normalise_profitability(
+        pe, pb,
+        float(cached.roe) if cached.roe is not None else None,
+        float(cached.roa) if cached.roa is not None else None,
+    )
+
     return FundamentalsResponse(
         symbol=stock.symbol,
         company_name=stock.company_name,
         market_cap=_market_cap(db, stock.id, cached),
-        pe=cached.pe,
-        pb=cached.pb,
+        pe=pe,
+        pb=pb,
         eps=cached.eps,
-        roe=cached.roe,
-        roa=cached.roa,
+        roe=roe,
+        roa=roa,
         dividend_yield=cached.dividend_yield,
         issue_share=cached.issue_share,
         charter_capital=cached.charter_capital,

@@ -190,6 +190,13 @@ npm run dev
   chạy đúng giờ — lịch cron là "sớm nhất có thể", lúc hệ thống bận có thể
   trễ hoặc bỏ nhịp. Muốn chặt hơn phải chạy tiến trình poll liên tục trên
   máy chủ trả phí (`RUN_SCHEDULER=true`).
+- **Chỉ số sinh lời không tin thẳng số của provider.** VCI không có tài
+  liệu về đơn vị ROE/ROA và đã từng khiến app hiện "ROE 0,14%" (sai 100
+  lần). Nay `services/fundamentals_math.py` suy ROE bằng đẳng thức
+  **ROE = P/B ÷ P/E** — P/E và P/B đã đối chiếu đúng — rồi dùng chính kết
+  quả đó để xác định đơn vị mà provider đang dùng và áp cho ROA. Giá trị
+  vượt ±200% bị **ẩn đi thay vì hiển thị**, vì một con số sai trông như
+  thật còn nguy hiểm hơn ô trống. Vốn hoá cũng tính lại = số cp × giá.
 - **Tên trường chỉ số tài chính của VCI chưa xác minh bằng dữ liệu thật**
   (API chỉ lộ tên cột khi gọi thật, sandbox phát triển không gọi được).
   `collectors/vnstock_adapter.py::get_company_fundamentals` dò theo nhiều

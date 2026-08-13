@@ -41,14 +41,6 @@ def _json_safe(value):
     return value
 
 
-def _ratio_to_percent(value: float | None) -> float | None:
-    """VCI trả các tỷ suất (ROE/ROA/cổ tức) dưới dạng TỶ SỐ chứ không phải
-    phần trăm: DHC có ROE 0.14 nghĩa là 14%. Trước đây app hiển thị thẳng
-    số thô kèm dấu "%" nên ra "0,14%" — sai đúng 100 lần (đã đối chiếu
-    với số liệu thật của DHC)."""
-    return None if value is None else value * 100
-
-
 def _first_present(row: dict, candidates: list[str]):
     """Trả về giá trị đầu tiên có mặt trong `row` theo danh sách tên cột
     ưu tiên. vnstock đôi khi đổi tên cột giữa các phiên bản nên tra theo
@@ -222,9 +214,12 @@ class VnstockAdapter(MarketDataProvider):
             pe=pe_value,
             pb=num(["pb", "price_to_book", "p_b"]),
             eps=eps_value,
-            roe=_ratio_to_percent(num(["roe", "return_on_equity"])),
-            roa=_ratio_to_percent(num(["roa", "return_on_asset"])),
-            dividend_yield=_ratio_to_percent(num(["dividend_yield", "dividend"])),
+            # Giữ NGUYÊN số thô của provider, không tự quy đổi đơn vị ở
+            # đây: đơn vị chỉ xác định được khi đối chiếu với P/E và P/B,
+            # việc đó làm ở services/fundamentals_math.py.
+            roe=num(["roe", "return_on_equity"]),
+            roa=num(["roa", "return_on_asset"]),
+            dividend_yield=num(["dividend_yield", "dividend"]),
             issue_share=num(["issue_share", "number_of_shares_mkt_cap", "outstanding_share"]),
             charter_capital=num(["charter_capital", "chartercapital"]),
             company_profile=str(profile) if profile else None,

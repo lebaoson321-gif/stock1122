@@ -7,18 +7,27 @@ ngoài giờ hoặc khi dữ liệu quá cũ thì lùi về giá đóng cửa g�
 tại" đều đi qua đây để tránh mỗi chỗ tự định nghĩa "hiện tại" một kiểu.
 """
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.price import PriceHistory
 from app.models.realtime import RealtimeQuote
+from app.services.market_session import VN_TZ
 
-# Giá khớp cũ hơn ngưỡng này coi như không còn phản ánh thị trường (job
-# poll chạy ~15 phút/lần nên vẫn còn dư địa cho 1-2 lần poll lỗi).
-REALTIME_MAX_AGE = timedelta(minutes=45)
+# Giá khớp được chấp nhận khi nó thuộc CHÍNH NGÀY GIAO DỊCH HÔM NAY (giờ
+# VN), không giới hạn theo số phút.
+#
+# Trước đây dùng ngưỡng 45 phút, nhưng job poll chạy trên GitHub Actions
+# gói miễn phí và thường xuyên trễ hoặc nhảy nhịp — quá 45 phút là giá
+# vừa lấy được bị vứt đi để quay về giá đóng cửa của phiên TRƯỚC, tức là
+# thay một số hơi cũ bằng một số cũ hơn hẳn.
+#
+# Giá khớp cuối cùng của hôm nay luôn sát thực tế hơn giá đóng cửa hôm
+# qua, kể cả sau khi thị trường đã đóng và bảng `price_history` chưa kịp
+# sync. Quote từ ngày trước thì bị loại — lúc đó giá đóng cửa mới đúng.
 
 # `price_history` lưu giá theo NGHÌN VND (FPT ~70.70 = 70.700đ) vì đó là
 # đơn vị vnstock trả về ở API lịch sử. Bảng giá realtime của VCI đi qua
@@ -71,6 +80,85 @@ def _rescale_to_match(raw: Decimal, reference: Decimal) -> Decimal | None:
     return best
 
 
+@dataclass
+class PriceSnapshot:
+    price: Decimal
+    source: str
+    change_pct: float | None
+
+
+def get_price_snapshots(db: Session, stock_ids: list[int]) -> dict[int, PriceSnapshot]:
+    """Giá hiện tại + % thay đổi cho NHIỀU mã cùng lúc.
+
+    Danh sách mã có thể tới vài trăm dòng, gọi `get_current_price` từng mã
+    sẽ thành vài trăm lượt truy vấn. Ở đây chỉ 2 truy vấn cho toàn bộ.
+    Quy tắc chọn giá và quy đổi đơn vị giữ y hệt `get_current_price` —
+    dùng chung `_rescale_to_match` để hai đường không lệch nhau.
+    """
+    if not stock_ids:
+        return {}
+
+    today_vn = datetime.now(VN_TZ).date()
+
+    # 2 phiên gần nhất mỗi mã: phiên mới nhất để lấy giá, phiên liền trước
+    # làm mốc tính % thay đổi.
+    ranked = (
+        select(
+            PriceHistory.stock_id,
+            PriceHistory.close,
+            PriceHistory.trade_date,
+            func.row_number()
+            .over(partition_by=PriceHistory.stock_id, order_by=PriceHistory.trade_date.desc())
+            .label("rn"),
+        )
+        .where(PriceHistory.stock_id.in_(stock_ids))
+        .subquery()
+    )
+    closes: dict[int, list[tuple[Decimal, object]]] = {}
+    for row in db.execute(select(ranked).where(ranked.c.rn <= 2).order_by(ranked.c.stock_id, ranked.c.rn)):
+        closes.setdefault(row.stock_id, []).append((Decimal(row.close), row.trade_date))
+
+    quotes = {
+        row.stock_id: (Decimal(row.match_price), row.captured_at)
+        for row in db.execute(
+            select(RealtimeQuote.stock_id, RealtimeQuote.match_price, RealtimeQuote.captured_at)
+            .where(
+                RealtimeQuote.stock_id.in_(stock_ids),
+                RealtimeQuote.match_price.is_not(None),
+            )
+            .distinct(RealtimeQuote.stock_id)
+            .order_by(RealtimeQuote.stock_id, RealtimeQuote.captured_at.desc())
+        )
+    }
+
+    snapshots: dict[int, PriceSnapshot] = {}
+    for stock_id in stock_ids:
+        rows = closes.get(stock_id)
+        if not rows:
+            continue
+        latest_close, latest_date = rows[0]
+
+        price, source = latest_close, "close"
+        quote = quotes.get(stock_id)
+        if quote is not None and quote[1].astimezone(VN_TZ).date() == today_vn:
+            rescaled = _rescale_to_match(quote[0], latest_close)
+            if rescaled is not None and rescaled > 0:
+                price, source = rescaled, "realtime"
+
+        # Cùng quy tắc mốc tham chiếu với routers/analysis.py.
+        if source == "realtime" and latest_date != today_vn:
+            reference = latest_close
+        else:
+            reference = rows[1][0] if len(rows) > 1 else latest_close
+
+        change_pct = float((price - reference) / reference * 100) if reference else None
+        snapshots[stock_id] = PriceSnapshot(
+            price=price, source=source, change_pct=round(change_pct, 2) if change_pct is not None else None
+        )
+
+    return snapshots
+
+
 def get_current_price(db: Session, stock_id: int) -> CurrentPrice | None:
     """Giá hiện tại của 1 mã, hoặc None nếu mã chưa có dữ liệu giá nào."""
     close = _latest_close(db, stock_id)
@@ -82,7 +170,7 @@ def get_current_price(db: Session, stock_id: int) -> CurrentPrice | None:
         .limit(1)
     ).first()
 
-    if quote is not None and datetime.now(timezone.utc) - quote.captured_at <= REALTIME_MAX_AGE:
+    if quote is not None and quote.captured_at.astimezone(VN_TZ).date() == datetime.now(VN_TZ).date():
         raw = Decimal(quote.match_price)
         if close is None:
             # Chưa có giá đóng cửa để đối chiếu đơn vị — không dùng giá

@@ -6,6 +6,7 @@ from app.collectors.factory import get_market_data_provider
 from app.db import get_db
 from app.models.stock import Stock
 from app.schemas.stock import HoseSymbol, StockSummary
+from app.services.pricing import get_price_snapshots
 
 router = APIRouter(prefix="/api/stocks", tags=["stocks"])
 
@@ -19,7 +20,22 @@ def list_stocks(
     if q:
         pattern = f"%{q}%"
         stmt = stmt.where(or_(Stock.symbol.ilike(pattern), Stock.company_name.ilike(pattern)))
-    return db.execute(stmt).scalars().all()
+    stocks = db.execute(stmt).scalars().all()
+
+    # Lấy giá hàng loạt (2 truy vấn cho cả danh sách) thay vì từng mã —
+    # danh sách có thể tới vài trăm dòng.
+    snapshots = get_price_snapshots(db, [s.id for s in stocks])
+    return [
+        StockSummary(
+            symbol=s.symbol,
+            company_name=s.company_name,
+            sector=s.sector,
+            current_price=float(snap.price) if (snap := snapshots.get(s.id)) else None,
+            price_source=snap.source if snap else None,
+            change_pct=snap.change_pct if snap else None,
+        )
+        for s in stocks
+    ]
 
 
 @router.get("/hose-symbols", response_model=list[HoseSymbol])

@@ -10,6 +10,11 @@ class StockSummary(BaseModel):
     symbol: str
     company_name: str
     sector: str
+    # Giá lấy qua services/pricing.py (ưu tiên giá khớp trong phiên) —
+    # KHÔNG đọc thẳng price_history, để mọi trang hiện cùng một giá.
+    current_price: Optional[float] = None
+    price_source: Optional[str] = None
+    change_pct: Optional[float] = None
 
 
 class HoseSymbol(BaseModel):

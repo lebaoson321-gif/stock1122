@@ -5,6 +5,10 @@ export interface StockSummary {
   symbol: string;
   company_name: string;
   sector: string;
+  /** Qua services/pricing.py — ưu tiên giá khớp trong phiên. */
+  current_price: number | null;
+  price_source: string | null;
+  change_pct: number | null;
 }
 
 export interface PricePoint {

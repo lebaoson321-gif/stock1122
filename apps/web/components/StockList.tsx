@@ -7,6 +7,13 @@ import type { StockSummary, SyncResult } from "@/lib/types";
 
 type Status = "loading" | "ready" | "error";
 
+function changeTone(pct: number | null): string {
+  if (pct === null || pct === undefined) return "text-neutral-200";
+  if (pct > 0) return "text-emerald-400";
+  if (pct < 0) return "text-red-400";
+  return "text-neutral-300";
+}
+
 export default function StockList() {
   const [stocks, setStocks] = useState<StockSummary[]>([]);
   const [status, setStatus] = useState<Status>("loading");
@@ -77,8 +84,25 @@ export default function StockList() {
               href={`/stock/${s.symbol}`}
               className="flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-900 px-4 py-3 hover:border-neutral-600"
             >
-              <span className="font-mono font-bold text-neutral-100">{s.symbol}</span>
-              <span className="truncate text-sm text-neutral-400">{s.company_name}</span>
+              <span className="w-16 shrink-0 font-mono font-bold text-neutral-100">{s.symbol}</span>
+              <span className="min-w-0 flex-1 truncate px-3 text-sm text-neutral-400">
+                {s.company_name}
+              </span>
+              {s.current_price !== null && (
+                <span className="flex shrink-0 items-baseline gap-2 text-right font-mono text-sm">
+                  <span className={changeTone(s.change_pct)}>{s.current_price}</span>
+                  {s.change_pct !== null && (
+                    <span className={`w-16 text-xs ${changeTone(s.change_pct)}`}>
+                      {s.change_pct >= 0 ? "▲" : "▼"} {Math.abs(s.change_pct).toFixed(2)}%
+                    </span>
+                  )}
+                  {s.price_source === "close" && (
+                    <span className="text-[10px] text-neutral-600" title="Giá đóng cửa gần nhất">
+                      ĐC
+                    </span>
+                  )}
+                </span>
+              )}
             </Link>
           ))}
         </div>

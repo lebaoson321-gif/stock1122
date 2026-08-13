@@ -14,6 +14,8 @@ from app.db import get_db
 from app.models.fundamentals import CompanyFundamentals
 from app.routers.common import get_stock_or_404
 from app.schemas.fundamentals import FundamentalsResponse, FundamentalsUnavailable
+from app.services.pricing import get_current_price
+from app.services.trading import PRICE_UNIT_VND
 
 router = APIRouter(prefix="/api/stocks", tags=["fundamentals"])
 
@@ -53,6 +55,26 @@ def _fetch_and_store(db: Session, stock_id: int, symbol: str) -> CompanyFundamen
     return row
 
 
+def _market_cap(db: Session, stock_id: int, cached: CompanyFundamentals) -> float | None:
+    """Vốn hoá = số cổ phiếu lưu hành × giá hiện tại.
+
+    Tính lại thay vì dùng thẳng số của provider: với DHC, provider trả
+    1,29 nghìn tỷ trong khi 106,2 triệu cp × 34.900đ = 3,71 nghìn tỷ —
+    lệch 2,9 lần, không phải bội số 1000 nên không phải sai đơn vị mà là
+    khớp nhầm cột. Hai đầu vào ở đây đều đã đối chiếu đúng với thực tế,
+    và đây đúng là định nghĩa của vốn hoá.
+
+    Chỉ lùi về số của provider khi thiếu một trong hai đầu vào.
+    """
+    if cached.issue_share is None:
+        return float(cached.market_cap) if cached.market_cap is not None else None
+    current = get_current_price(db, stock_id)
+    if current is None:
+        return float(cached.market_cap) if cached.market_cap is not None else None
+    # Giá lưu theo nghìn VND (xem services/trading.py), vốn hoá trả về VND.
+    return float(cached.issue_share) * float(current.price) * float(PRICE_UNIT_VND)
+
+
 @router.get(
     "/{symbol}/fundamentals",
     response_model=FundamentalsResponse | FundamentalsUnavailable,
@@ -83,7 +105,7 @@ def get_fundamentals(
     return FundamentalsResponse(
         symbol=stock.symbol,
         company_name=stock.company_name,
-        market_cap=cached.market_cap,
+        market_cap=_market_cap(db, stock.id, cached),
         pe=cached.pe,
         pb=cached.pb,
         eps=cached.eps,

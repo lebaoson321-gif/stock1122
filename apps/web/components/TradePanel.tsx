@@ -8,12 +8,49 @@ import type { PortfolioOut, PortfolioResult } from "@/lib/types";
 
 type Status = "loading" | "anonymous" | "no-portfolio" | "ready" | "error";
 
-function fmtVnd(n: number): string {
+function fmtVnd(n: number | null | undefined): string {
+  if (n === null || n === undefined) return "—";
   return n.toLocaleString("vi-VN", { maximumFractionDigits: 0 });
 }
 
 /** Giá lưu theo nghìn VND (biểu đồ hiện 70.70); tiền theo VND. */
 const PRICE_UNIT_VND = 1000;
+
+function toneOf(n: number | null | undefined): string {
+  if (n === null || n === undefined) return "text-neutral-200";
+  return n >= 0 ? "text-emerald-400" : "text-red-400";
+}
+
+/** "+1.234.000đ (+2,15%)" — dấu + hiện tường minh để phân biệt ngay với lỗ. */
+function signed(amount: number | null | undefined, pct: number | null | undefined): string {
+  if (amount === null || amount === undefined) return "—";
+  const sign = amount >= 0 ? "+" : "";
+  const pctText =
+    pct === null || pct === undefined ? "" : ` (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)`;
+  return `${sign}${fmtVnd(amount)}đ${pctText}`;
+}
+
+function Row({
+  label,
+  value,
+  tone = "text-neutral-200",
+  hint,
+}: {
+  label: string;
+  value: string;
+  tone?: string;
+  hint?: string;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-2 text-sm">
+      <span className="whitespace-nowrap text-neutral-500">{label}</span>
+      <span className={`text-right font-mono ${tone}`}>
+        {value}
+        {hint && <span className="ml-1 text-[10px] text-neutral-600">{hint}</span>}
+      </span>
+    </div>
+  );
+}
 
 /**
  * `referencePrice` là giá đóng cửa gần nhất mà trang chi tiết đã tải sẵn
@@ -132,15 +169,33 @@ export default function TradePanel({
 
       {status === "ready" && portfolio && (
         <div className="flex flex-col gap-3">
-          <div className="flex justify-between text-sm">
-            <span className="text-neutral-500">Tiền mặt</span>
-            <span className="font-mono text-neutral-200">{fmtVnd(portfolio.cash_balance)}đ</span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-neutral-500">Đang nắm</span>
-            <span className="font-mono text-neutral-200">
-              {holding ? `${holding.quantity} cp @ ${holding.avg_cost}` : "—"}
-            </span>
+          <Row label="Tiền mặt" value={`${fmtVnd(portfolio.cash_balance)}đ`} />
+          <Row
+            label="Giá hiện tại"
+            value={estPrice !== null ? String(estPrice) : "—"}
+            hint={holding?.price_source === "close" ? "đóng cửa" : undefined}
+          />
+
+          {holding ? (
+            <>
+              <Row label="Đang nắm" value={`${holding.quantity} cp @ ${holding.avg_cost}`} />
+              <Row label="Giá trị mã này" value={`${fmtVnd(holding.market_value)}đ`} />
+              <Row
+                label="Lãi/lỗ mã này"
+                value={signed(holding.pnl, holding.pnl_pct)}
+                tone={toneOf(holding.pnl)}
+              />
+            </>
+          ) : (
+            <Row label="Đang nắm" value="—" />
+          )}
+
+          <div className="border-t border-neutral-800 pt-3">
+            <Row
+              label="Lãi/lỗ toàn danh mục"
+              value={signed(portfolio.total_pnl, portfolio.total_pnl_pct)}
+              tone={toneOf(portfolio.total_pnl)}
+            />
           </div>
 
           <div className="flex items-center gap-2">

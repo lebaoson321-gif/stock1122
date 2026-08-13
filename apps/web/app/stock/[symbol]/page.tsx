@@ -168,11 +168,14 @@ export default function StockPage({ params }: { params: { symbol: string } }) {
 
       <div className="flex flex-wrap items-baseline gap-4 border-b border-neutral-800 pb-4">
         <span className={`font-mono text-4xl font-bold ${analysis.change_pct >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-          {fmt(analysis.close)}
+          {fmt(analysis.current_price)}
         </span>
         <span className={`font-mono text-base font-semibold ${analysis.change_pct >= 0 ? "text-emerald-400" : "text-red-400"}`}>
           {analysis.change_pct >= 0 ? "▲" : "▼"} {fmt(Math.abs(analysis.change_pct))}%
         </span>
+        {analysis.price_source === "close" && (
+          <span className="text-[11px] text-neutral-600">giá đóng cửa gần nhất</span>
+        )}
         {refreshedAt && (
           <span className="text-[11px] text-neutral-600">
             cập nhật {vnTimeWithSeconds(refreshedAt)}
@@ -195,7 +198,7 @@ export default function StockPage({ params }: { params: { symbol: string } }) {
           <CandlestickChart data={history} />
         </div>
         <div className="flex flex-col gap-5">
-          <TradePanel symbol={symbol} referencePrice={analysis.close} />
+          <TradePanel symbol={symbol} referencePrice={analysis.current_price} />
           <AIPredictionCard prediction={prediction} />
         </div>
       </div>

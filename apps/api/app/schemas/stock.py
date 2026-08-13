@@ -42,6 +42,10 @@ class AnalysisResponse(BaseModel):
     symbol: str
     date: date_type
     close: float
+    # Giá dùng để hiển thị và giao dịch — cùng nguồn với danh mục ảo
+    # (services/pricing.py). Khác `close` khi đang có giá khớp trong phiên.
+    current_price: float
+    price_source: str
     change_pct: float
     ma20: Optional[float] = None
     ma50: Optional[float] = None

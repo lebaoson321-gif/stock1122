@@ -32,6 +32,9 @@ export interface AnalysisResponse {
   symbol: string;
   date: string;
   close: number;
+  /** Giá dùng để hiển thị/giao dịch — cùng nguồn với danh mục ảo. */
+  current_price: number;
+  price_source: string;
   change_pct: number;
   ma20: number | null;
   ma50: number | null;

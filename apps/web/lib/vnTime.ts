@@ -29,3 +29,16 @@ export function vnTimeWithSeconds(value: string | Date): string {
 export function vnDateTime(value: string | Date): string {
   return new Date(value).toLocaleString("vi-VN", { timeZone: VN_TZ });
 }
+
+/**
+ * Định dạng một ngày giao dịch thuần (không có giờ, VD "2026-08-14" từ
+ * cột `trade_date`) thành "dd/mm/yyyy". Không đi qua `new Date(value)` +
+ * timeZone như các hàm trên: chuỗi "YYYY-MM-DD" được parse là UTC nửa
+ * đêm, quy đổi sang giờ VN (+7) sẽ lệch sang 07:00 — vô hại với giờ
+ * nhưng không cần thiết và dễ nhầm khi debug; ngày giao dịch vốn đã là
+ * ngày lịch VN, không cần quy đổi múi giờ.
+ */
+export function vnDate(value: string): string {
+  const [year, month, day] = value.split("-");
+  return `${day}/${month}/${year}`;
+}

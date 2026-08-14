@@ -16,6 +16,7 @@ import pandas as pd
 from app.collectors.base import (
     CompanyFundamentals,
     CompanyInfo,
+    IndexBar,
     ListedSymbol,
     MarketDataProvider,
     PriceBar,
@@ -25,6 +26,23 @@ from app.collectors.base import (
 # vnstock trả cột "exchange" (đổi tên từ "board" của VCI) với các giá trị
 # đã gặp thực tế là "HOSE" hoặc "HSX" tuỳ phiên bản API — chấp nhận cả 2.
 _HOSE_EXCHANGE_ALIASES = {"HOSE", "HSX"}
+
+# Mã chỉ số công khai dùng trong app (lưu DB, endpoint, UI).
+VALID_INDEX_CODES = ("VNINDEX", "HNX", "UPCOM", "VN30")
+
+# vnstock nhận diện asset_type="index" qua is_valid_index() (module
+# vnstock.common.indices), tập hợp này CHỈ chứa {"VNINDEX", "HNXINDEX",
+# "UPCOMINDEX", "HNX30"} + các mã trong INDICES_INFO (có "VN30") — KHÔNG
+# chứa "HNX"/"UPCOM" trơn như _VCI_INDEX_MAPPING gợi ý (mapping đó chỉ
+# được tra SAU KHI đã xác định asset_type == "index"). Đã kiểm chứng bằng
+# lời gọi thật: "HNX" bị nhận nhầm thành asset_type="stock", "UPCOM" bị
+# từ chối ngay ở bước validate symbol. Vì vậy map sang mã đầy đủ ở đây.
+_INDEX_CODE_TO_VNSTOCK_SYMBOL = {
+    "VNINDEX": "VNINDEX",
+    "HNX": "HNXINDEX",
+    "UPCOM": "UPCOMINDEX",
+    "VN30": "VN30",
+}
 
 
 def _json_safe(value):
@@ -73,6 +91,42 @@ class VnstockAdapter(MarketDataProvider):
         for _, row in df.iterrows():
             bars.append(
                 PriceBar(
+                    trade_date=row["date"].date(),
+                    open=float(row["open"]),
+                    high=float(row["high"]),
+                    low=float(row["low"]),
+                    close=float(row["close"]),
+                    volume=int(row["volume"]),
+                )
+            )
+        return bars
+
+    def get_index_history(self, code: str, years: int) -> list[IndexBar]:
+        from vnstock import Vnstock
+
+        code = code.upper()
+        vnstock_symbol = _INDEX_CODE_TO_VNSTOCK_SYMBOL.get(code)
+        if vnstock_symbol is None:
+            raise ValueError(
+                f"Mã chỉ số không hợp lệ: {code}. Chỉ hỗ trợ: {', '.join(VALID_INDEX_CODES)}"
+            )
+
+        end_date = datetime.now().strftime("%Y-%m-%d")
+        start_date = (datetime.now() - timedelta(days=365 * years)).strftime("%Y-%m-%d")
+
+        stock = Vnstock().stock(symbol=vnstock_symbol, source="VCI")
+        raw = stock.quote.history(start=start_date, end=end_date, interval="1D")
+        if raw is None or raw.empty:
+            return []
+
+        df = raw.rename(columns={"time": "date"})
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.sort_values("date").reset_index(drop=True)
+
+        bars = []
+        for _, row in df.iterrows():
+            bars.append(
+                IndexBar(
                     trade_date=row["date"].date(),
                     open=float(row["open"]),
                     high=float(row["high"]),
@@ -224,5 +278,8 @@ class VnstockAdapter(MarketDataProvider):
             charter_capital=num(["charter_capital", "chartercapital"]),
             company_profile=str(profile) if profile else None,
             industry=str(industry) if industry else None,
-            raw=merged,
+            # "_source" đánh dấu nguồn để router (fundamentals.py) biết
+            # ROE/ROA thô này còn cần suy đơn vị qua fundamentals_math.py
+            # hay không — vnstock (VCI) có, fireant_adapter.py thì không.
+            raw={"_source": "vnstock", **merged},
         )

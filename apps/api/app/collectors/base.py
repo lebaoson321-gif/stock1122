@@ -50,6 +50,16 @@ class ListedSymbol:
 
 
 @dataclass
+class IndexBar:
+    trade_date: date
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+
+
+@dataclass
 class CompanyFundamentals:
     """Chỉ số cơ bản của doanh nghiệp. MỌI trường đều optional: provider
     là API không chính thức, tên trường có thể đổi hoặc thiếu tuỳ mã (mã
@@ -84,5 +94,16 @@ class MarketDataProvider(Protocol):
     def get_price_board(self, symbols: list[str]) -> list[PriceBoardQuote]: ...
 
     def list_hose_symbols(self) -> list[ListedSymbol]: ...
+
+    def get_company_fundamentals(self, symbol: str) -> CompanyFundamentals: ...
+
+    def get_index_history(self, code: str, years: int) -> list[IndexBar]: ...
+
+
+class FundamentalsProvider(Protocol):
+    """Interface hẹp hơn MarketDataProvider — chỉ chỉ số tài chính. Nguồn
+    chỉ số tài chính có thể khác nguồn giá (xem factory.get_fundamentals_provider),
+    nên adapter kiểu FireAntAdapter không cần (và không nên) implement
+    toàn bộ MarketDataProvider."""
 
     def get_company_fundamentals(self, symbol: str) -> CompanyFundamentals: ...

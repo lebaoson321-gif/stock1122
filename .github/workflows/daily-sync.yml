@@ -54,6 +54,14 @@ jobs:
           echo "::error::Backend không phản hồi sau 10 lần thử."
           exit 1
 
+      - name: Đồng bộ chỉ số thị trường (VN-Index, HNX, UPCoM, VN30)
+        env:
+          YEARS: ${{ inputs.years || '1' }}
+        run: |
+          curl -fsS --max-time 180 -X POST \
+            "$API_BASE_URL/api/market/indices/sync?years=$YEARS" | tee indices-sync.json
+          echo "" # curl output không có newline cuối, xuống dòng cho log dễ đọc
+
       - name: Lấy danh sách mã cần đồng bộ
         run: |
           # Nguồn mặc định là danh sách HOSE đầy đủ (~400 mã) chứ KHÔNG

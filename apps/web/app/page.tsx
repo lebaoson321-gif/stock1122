@@ -1,9 +1,12 @@
+import MarketOverview from "@/components/MarketOverview";
 import SearchBar from "@/components/SearchBar";
 import StockList from "@/components/StockList";
 
 export default function HomePage() {
   return (
     <div className="flex flex-col gap-8">
+      <MarketOverview />
+
       <div>
         <h1 className="mb-2 font-mono text-2xl font-bold">Tìm mã cổ phiếu</h1>
         <p className="mb-4 text-sm text-neutral-400">

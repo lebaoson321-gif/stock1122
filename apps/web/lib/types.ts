@@ -202,3 +202,23 @@ export interface MarketStatus {
   next_change: string | null;
   last_quote_at: string | null;
 }
+
+export type IndexCode = "VNINDEX" | "HNX" | "UPCOM" | "VN30";
+
+export interface IndexQuote {
+  code: IndexCode;
+  name: string;
+  date: string;
+  close: number;
+  change_point: number;
+  change_pct: number;
+}
+
+export interface IndexBarOut {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}

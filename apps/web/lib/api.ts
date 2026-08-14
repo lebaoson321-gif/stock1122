@@ -4,6 +4,8 @@
 import type {
   AnalysisResponse,
   FundamentalsResult,
+  IndexBarOut,
+  IndexQuote,
   MarketStatus,
   OrderResult,
   PortfolioOut,
@@ -54,6 +56,10 @@ export const api = {
     request<FundamentalsResult>(`/api/stocks/${symbol}/fundamentals`),
 
   getMarketStatus: () => request<MarketStatus>(`/api/market/status`),
+
+  getIndices: () => request<IndexQuote[]>(`/api/market/indices`),
+
+  getIndexHistory: (code: string) => request<IndexBarOut[]>(`/api/market/indices/${code}/history`),
 
   getWatchlist: (accessToken: string) =>
     request<WatchlistOut>(`/api/watchlist`, { headers: authHeaders(accessToken) }),

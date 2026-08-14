@@ -2,6 +2,7 @@ from app.models import _auth_shadow  # noqa: F401  đăng ký shadow table auth.
 from app.models.indicator import TechnicalIndicator
 from app.models.prediction import AIPrediction
 from app.models.fundamentals import CompanyFundamentals
+from app.models.market_index import MarketIndex
 from app.models.portfolio import Portfolio, PortfolioPosition, PortfolioTransaction
 from app.models.price import PriceHistory
 from app.models.realtime import RealtimeQuote
@@ -24,4 +25,5 @@ __all__ = [
     "PortfolioPosition",
     "PortfolioTransaction",
     "CompanyFundamentals",
+    "MarketIndex",
 ]

@@ -76,6 +76,13 @@ export default function FundamentalsCard({ data }: { data: FundamentalsResult | 
         {data.industry && <span className="text-xs text-neutral-400">{data.industry}</span>}
       </div>
 
+      {data.source === "vnstock" && (
+        <div className="mb-3 rounded-md border border-amber-900/50 bg-amber-950/20 p-3 text-xs text-amber-200/90">
+          Đang dùng nguồn dự phòng (VCI) — ROE/ROA/EPS có thể sai lệch đáng kể. Kiểm tra biến
+          FIREANT_TOKEN trên Render.
+        </div>
+      )}
+
       {metrics.length === 0 ? (
         <div className="text-sm text-neutral-400">
           Chưa lấy được chỉ số nào cho mã này (nguồn dữ liệu không có sẵn chỉ số cơ bản).
@@ -108,8 +115,8 @@ export default function FundamentalsCard({ data }: { data: FundamentalsResult | 
       )}
 
       <div className="mt-3 text-[10px] text-neutral-600">
-        Cập nhật {daysOld === 0 ? "hôm nay" : `${daysOld} ngày trước`} · nguồn VCI qua vnstock (không
-        phải dữ liệu chính thức từ HOSE)
+        Cập nhật {daysOld === 0 ? "hôm nay" : `${daysOld} ngày trước`}
+        {data.source === "fireant" ? " · Nguồn: FireAnt" : " · nguồn VCI qua vnstock (không phải dữ liệu chính thức từ HOSE)"}
       </div>
     </div>
   );

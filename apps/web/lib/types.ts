@@ -174,6 +174,7 @@ export interface FundamentalsResponse {
   company_profile: string | null;
   industry: string | null;
   fetched_at: string;
+  source: "fireant" | "vnstock";
 }
 
 export interface FundamentalsUnavailable {

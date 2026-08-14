@@ -107,7 +107,8 @@ def get_fundamentals(
     pb = float(cached.pb) if cached.pb is not None else None
     raw_roe = float(cached.roe) if cached.roe is not None else None
     raw_roa = float(cached.roa) if cached.roa is not None else None
-    if (cached.raw or {}).get("_source") == "fireant":
+    source = (cached.raw or {}).get("_source")
+    if source == "fireant":
         # FireAnt trả ROE/ROA đã là phần trăm — dùng thẳng, chỉ lọc giá
         # trị vô lý. Xem services/fundamentals_math.py::roe_roa_from_fireant.
         roe, roa = roe_roa_from_fireant(raw_roe, raw_roa)
@@ -115,6 +116,7 @@ def get_fundamentals(
         # vnstock (VCI): đơn vị ROE/ROA không xác định được từ chính nó —
         # suy ra bằng đẳng thức ROE = P/B ÷ P/E.
         roe, roa = normalise_profitability(pe, pb, raw_roe, raw_roa)
+        source = "vnstock"
 
     return FundamentalsResponse(
         symbol=stock.symbol,
@@ -131,4 +133,5 @@ def get_fundamentals(
         company_profile=cached.company_profile,
         industry=cached.industry or stock.sector or None,
         fetched_at=cached.fetched_at,
+        source=source,
     )

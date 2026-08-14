@@ -23,6 +23,10 @@ class FundamentalsResponse(BaseModel):
     company_profile: str | None = None
     industry: str | None = None
     fetched_at: datetime
+    # Bắt buộc truyền, không đặt mặc định — quên gán ở router phải vỡ
+    # ngay lúc chạy (lỗi validation), không được âm thầm thiếu trên
+    # production rồi để UI hiện số mà không rõ nguồn nào.
+    source: Literal["fireant", "vnstock"]
 
 
 class FundamentalsUnavailable(BaseModel):

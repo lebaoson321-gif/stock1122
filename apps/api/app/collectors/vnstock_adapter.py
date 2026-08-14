@@ -9,7 +9,7 @@ sang "VCI" (xem legacy/README.md). Version vnstock đã pin cứng trong
 requirements.txt (không dùng >=) chính vì lỗi âm thầm này.
 """
 import math
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
@@ -57,6 +57,18 @@ def _json_safe(value):
     if isinstance(value, pd.Timestamp):
         return value.isoformat()
     return value
+
+
+def _parse_trading_date(value) -> date | None:
+    """`listing_trading_date` của VCI là chuỗi "YYYY-MM-DD" (đã kiểm chứng
+    trên payload thật). Trả None nếu định dạng lạ — thà thiếu ngày còn hơn
+    gán nhầm phiên."""
+    if not value:
+        return None
+    try:
+        return datetime.strptime(str(value)[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
 
 
 def _first_present(row: dict, candidates: list[str]):
@@ -188,6 +200,19 @@ class VnstockAdapter(MarketDataProvider):
                     ),
                     floor_price=_json_safe(_first_present(row_dict, ["listing_floor", "floor", "floor_price"])),
                     raw={k: _json_safe(v) for k, v in row_dict.items()},
+                    # Tên trường lấy từ payload THẬT của VCI (đã đối chiếu
+                    # với mã VTP 2026-08-14), không phải đoán:
+                    #   match_open_price 53800 / match_highest 53800 /
+                    #   match_lowest 51900 / match_accumulated_volume 519100
+                    open_price=_json_safe(_first_present(row_dict, ["match_open_price", "open_price", "open"])),
+                    high_price=_json_safe(_first_present(row_dict, ["match_highest", "highest", "high"])),
+                    low_price=_json_safe(_first_present(row_dict, ["match_lowest", "lowest", "low"])),
+                    accumulated_volume=_json_safe(
+                        _first_present(row_dict, ["match_accumulated_volume", "accumulated_volume", "total_volume"])
+                    ),
+                    trading_date=_parse_trading_date(
+                        _first_present(row_dict, ["listing_trading_date", "trading_date"])
+                    ),
                 )
             )
         return quotes

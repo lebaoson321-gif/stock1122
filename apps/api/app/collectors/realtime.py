@@ -35,6 +35,11 @@ def poll_and_store_price_board(db: Session, provider: MarketDataProvider, symbol
                 "ceiling_price": q.ceiling_price,
                 "floor_price": q.floor_price,
                 "raw": q.raw,
+                "open_price": q.open_price,
+                "high_price": q.high_price,
+                "low_price": q.low_price,
+                "accumulated_volume": q.accumulated_volume,
+                "trading_date": q.trading_date,
             }
         )
 
@@ -51,6 +56,11 @@ def poll_and_store_price_board(db: Session, provider: MarketDataProvider, symbol
             "ceiling_price": stmt.excluded.ceiling_price,
             "floor_price": stmt.excluded.floor_price,
             "raw": stmt.excluded.raw,
+            "open_price": stmt.excluded.open_price,
+            "high_price": stmt.excluded.high_price,
+            "low_price": stmt.excluded.low_price,
+            "accumulated_volume": stmt.excluded.accumulated_volume,
+            "trading_date": stmt.excluded.trading_date,
         },
     )
     db.execute(stmt)

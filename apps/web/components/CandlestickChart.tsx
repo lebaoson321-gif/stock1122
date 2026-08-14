@@ -134,9 +134,22 @@ export default function CandlestickChart({ data }: Props) {
     bbLowerSeriesRef.current?.applyOptions({ visible: showBollinger });
   }, [showBollinger]);
 
+  const live = data.length > 0 && data[data.length - 1].is_intraday === true;
+
   return (
     <div>
-      <div className="mb-2 flex justify-end">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        {live ? (
+          <span
+            className="flex items-center gap-1.5 text-[11px] text-amber-400"
+            title="Cây nến cuối là phiên đang diễn ra, giá cao/thấp/đóng cửa còn thay đổi tới khi hết phiên."
+          >
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
+            Nến cuối: phiên đang diễn ra
+          </span>
+        ) : (
+          <span />
+        )}
         <button
           onClick={() => setShowBollinger((v) => !v)}
           aria-pressed={showBollinger}

@@ -7,6 +7,7 @@ from app.models.indicator import TechnicalIndicator
 from app.models.price import PriceHistory
 from app.routers.common import get_stock_or_404
 from app.schemas.stock import PricePoint
+from app.services.pricing import get_intraday_candle
 
 router = APIRouter(prefix="/api/stocks", tags=["history"])
 
@@ -41,6 +42,25 @@ def get_history(symbol: str, db: Session = Depends(get_db)):
                 bb_middle=_f(indicator, "bb_middle"), bb_lower=_f(indicator, "bb_lower"),
             )
         )
+
+    # Cây nến của phiên đang chạy. price_history chỉ có dòng hôm nay sau
+    # khi job đồng bộ chạy cuối ngày, nên trong phiên biểu đồ sẽ thiếu
+    # đúng cây nến người dùng quan tâm nhất.
+    # Không kèm chỉ báo kỹ thuật: MA/RSI/MACD tính trên chuỗi phiên ĐÃ
+    # ĐÓNG, thêm điểm cho phiên chưa chốt sẽ làm đường chỉ báo nhảy loạn
+    # rồi lại đổi khi phiên đóng thật.
+    candle = get_intraday_candle(db, stock.id)
+    if candle is not None:
+        points.append(
+            PricePoint(
+                date=candle.trade_date,
+                open=float(candle.open), high=float(candle.high),
+                low=float(candle.low), close=float(candle.close),
+                volume=candle.volume,
+                is_intraday=True,
+            )
+        )
+
     return points
 
 

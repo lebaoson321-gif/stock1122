@@ -7,7 +7,7 @@ ngoài giờ hoặc khi dữ liệu quá cũ thì lùi về giá đóng cửa g�
 tại" đều đi qua đây để tránh mỗi chỗ tự định nghĩa "hiện tại" một kiểu.
 """
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -157,6 +157,83 @@ def get_price_snapshots(db: Session, stock_ids: list[int]) -> dict[int, PriceSna
         )
 
     return snapshots
+
+
+@dataclass
+class IntradayCandle:
+    trade_date: date
+    open: Decimal
+    high: Decimal
+    low: Decimal
+    close: Decimal
+    volume: int
+
+
+def get_intraday_candle(db: Session, stock_id: int) -> IntradayCandle | None:
+    """Cây nến ĐANG CHẠY của phiên hôm nay, dựng từ bảng giá.
+
+    Vì sao cần: `price_history` chỉ có dòng của hôm nay SAU KHI job đồng bộ
+    chạy (sau giờ đóng cửa), nên trong phiên cây nến cuối trên biểu đồ vẫn
+    là của hôm qua — biểu đồ chậm một ngày so với giá hiển thị ở tiêu đề.
+
+    Số liệu lấy nguyên từ bảng giá chứ KHÔNG tự tổng hợp từ các lần poll:
+    provider trả sẵn giá mở/cao/thấp và khối lượng luỹ kế của cả phiên, nên
+    chính xác tuyệt đối. Nếu tự gom từ các mẫu poll 10 phút/lần thì sẽ bỏ
+    sót đỉnh/đáy xảy ra giữa hai lần poll.
+
+    Trả None khi: chưa có giá khớp hôm nay, hoặc `price_history` đã có dòng
+    của hôm nay rồi (lúc đó dùng dòng thật, không cần nến tạm).
+    """
+    quote = db.execute(
+        select(RealtimeQuote)
+        .where(RealtimeQuote.stock_id == stock_id, RealtimeQuote.match_price.is_not(None))
+        .order_by(RealtimeQuote.captured_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if quote is None:
+        return None
+
+    # Ưu tiên ngày provider khai báo; thiếu thì suy từ lúc mình gọi.
+    quote_date = quote.trading_date or quote.captured_at.astimezone(VN_TZ).date()
+    if quote_date != datetime.now(VN_TZ).date():
+        return None
+
+    close = _latest_close(db, stock_id)
+    if close is None:
+        return None
+    latest_close, latest_as_of = close
+    if latest_as_of.date() >= quote_date:
+        # price_history đã có phiên này rồi — dùng dữ liệu thật, không vẽ
+        # thêm nến tạm chồng lên.
+        return None
+
+    # Giá bảng giá là VND thô (52300) còn price_history theo nghìn VND
+    # (52.30) — quy đổi qua đúng hàm dùng cho giá hiện tại để hai đường
+    # không thể lệch nhau.
+    def rescaled(value) -> Decimal | None:
+        return None if value is None else _rescale_to_match(Decimal(value), latest_close)
+
+    close_price = rescaled(quote.match_price)
+    if close_price is None or close_price <= 0:
+        return None
+
+    # Thiếu trường nào thì lấy giá khớp bù vào: một cây nến "phẳng" ở giá
+    # hiện tại vẫn đúng hơn là không vẽ gì.
+    open_price = rescaled(quote.open_price) or close_price
+    high_price = rescaled(quote.high_price) or max(open_price, close_price)
+    low_price = rescaled(quote.low_price) or min(open_price, close_price)
+
+    return IntradayCandle(
+        trade_date=quote_date,
+        open=open_price,
+        # Giá khớp hiện tại có thể đã vượt cao/thấp nhất provider ghi nhận
+        # (dữ liệu 2 trường không nhất thiết cùng thời điểm) — mở rộng để
+        # nến không bao giờ có thân nằm ngoài bóng.
+        high=max(high_price, open_price, close_price),
+        low=min(low_price, open_price, close_price),
+        close=close_price,
+        volume=int(quote.accumulated_volume or quote.match_volume or 0),
+    )
 
 
 def get_current_price(db: Session, stock_id: int) -> CurrentPrice | None:

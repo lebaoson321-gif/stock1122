@@ -41,6 +41,16 @@ class PriceBoardQuote:
     ceiling_price: float | None
     floor_price: float | None
     raw: dict
+    # OHLC + khối lượng luỹ kế của CHÍNH phiên hôm nay, do bảng giá trả
+    # sẵn — dùng để vẽ cây nến đang chạy trên biểu đồ (price_history chỉ
+    # có dòng của hôm nay sau khi job sync chạy, tức sau giờ đóng cửa).
+    open_price: float | None = None
+    high_price: float | None = None
+    low_price: float | None = None
+    accumulated_volume: int | None = None
+    # Ngày giao dịch do provider khai báo — đáng tin hơn captured_at (là
+    # thời điểm MÌNH gọi), nhất là khi job poll chạy trễ qua nửa đêm.
+    trading_date: date | None = None
 
 
 @dataclass

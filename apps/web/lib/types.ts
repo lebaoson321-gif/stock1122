@@ -30,6 +30,8 @@ export interface PricePoint {
   bb_upper: number | null;
   bb_middle: number | null;
   bb_lower: number | null;
+  /** Phiên chưa đóng cửa — số liệu còn thay đổi. */
+  is_intraday?: boolean;
 }
 
 export interface AnalysisResponse {

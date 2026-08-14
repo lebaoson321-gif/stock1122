@@ -41,6 +41,9 @@ class PricePoint(BaseModel):
     bb_upper: Optional[float] = None
     bb_middle: Optional[float] = None
     bb_lower: Optional[float] = None
+    # True = phiên CHƯA đóng cửa, số liệu còn thay đổi. Frontend dùng để
+    # đánh dấu khác đi, tránh nhầm với nến đã chốt.
+    is_intraday: bool = False
 
 
 class AnalysisResponse(BaseModel):

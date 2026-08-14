@@ -9,12 +9,12 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.collectors.factory import get_market_data_provider
+from app.collectors.factory import get_fundamentals_provider
 from app.db import get_db
 from app.models.fundamentals import CompanyFundamentals
 from app.routers.common import get_stock_or_404
 from app.schemas.fundamentals import FundamentalsResponse, FundamentalsUnavailable
-from app.services.fundamentals_math import normalise_profitability
+from app.services.fundamentals_math import normalise_profitability, roe_roa_from_fireant
 from app.services.pricing import get_current_price
 from app.services.trading import PRICE_UNIT_VND
 
@@ -32,7 +32,7 @@ _STORED_FIELDS = (
 
 
 def _fetch_and_store(db: Session, stock_id: int, symbol: str) -> CompanyFundamentals | None:
-    provider = get_market_data_provider()
+    provider = get_fundamentals_provider()
     try:
         data = provider.get_company_fundamentals(symbol)
     except Exception:  # noqa: BLE001 — provider không chính thức, lỗi là chuyện thường
@@ -105,13 +105,16 @@ def get_fundamentals(
 
     pe = float(cached.pe) if cached.pe is not None else None
     pb = float(cached.pb) if cached.pb is not None else None
-    # Đơn vị ROE/ROA của provider không xác định được từ chính nó — suy ra
-    # bằng đẳng thức ROE = P/B ÷ P/E, xem services/fundamentals_math.py.
-    roe, roa = normalise_profitability(
-        pe, pb,
-        float(cached.roe) if cached.roe is not None else None,
-        float(cached.roa) if cached.roa is not None else None,
-    )
+    raw_roe = float(cached.roe) if cached.roe is not None else None
+    raw_roa = float(cached.roa) if cached.roa is not None else None
+    if (cached.raw or {}).get("_source") == "fireant":
+        # FireAnt trả ROE/ROA đã là phần trăm — dùng thẳng, chỉ lọc giá
+        # trị vô lý. Xem services/fundamentals_math.py::roe_roa_from_fireant.
+        roe, roa = roe_roa_from_fireant(raw_roe, raw_roa)
+    else:
+        # vnstock (VCI): đơn vị ROE/ROA không xác định được từ chính nó —
+        # suy ra bằng đẳng thức ROE = P/B ÷ P/E.
+        roe, roa = normalise_profitability(pe, pb, raw_roe, raw_roa)
 
     return FundamentalsResponse(
         symbol=stock.symbol,

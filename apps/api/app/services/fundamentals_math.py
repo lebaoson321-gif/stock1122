@@ -72,6 +72,21 @@ def as_percent(value: float | None, scale: float | None) -> float | None:
     return result
 
 
+def roe_roa_from_fireant(
+    raw_roe: float | None,
+    raw_roa: float | None,
+) -> tuple[float | None, float | None]:
+    """ROE/ROA khi nguồn là FireAnt (raw["_source"] == "fireant").
+
+    FireAnt trả ROE/ROA ĐÃ LÀ phần trăm (đã kiểm chứng bằng dữ liệu thật
+    — DHC 23,96 nghĩa là 23,96%, khớp bảng giá công ty chứng khoán), khác
+    hẳn VCI nên KHÔNG chạy qua normalise_profitability (suy đơn vị bằng
+    P/B ÷ P/E chỉ đúng khi provider trả tỷ số không rõ đơn vị). Vẫn giữ
+    bộ lọc giá trị vô lý — lớp an toàn này không phụ thuộc nguồn nào.
+    """
+    return as_percent(raw_roe, 1.0), as_percent(raw_roa, 1.0)
+
+
 def normalise_profitability(
     pe: float | None,
     pb: float | None,

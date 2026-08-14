@@ -31,6 +31,15 @@ class Settings(BaseSettings):
 
     # --- Data collection ---------------------------------------------------
     market_data_provider: str = "vnstock"
+    # Nguồn RIÊNG cho chỉ số tài chính doanh nghiệp (P/E, EPS, ROE, ROA...).
+    # Tách khỏi market_data_provider vì giá vẫn nên đi qua vnstock trong
+    # khi chỉ số tài chính đổi sang fireant (VCI tính sai P/E/EPS ~1,9
+    # lần — cơ sở lợi nhuận chỉ bằng nửa TTM thật, xem fireant_adapter.py).
+    fundamentals_provider: str = "vnstock"  # "vnstock" hoặc "fireant"
+    # Bearer token của tài khoản fireant.vn đã đăng nhập — lấy qua F12 >
+    # Network > header Authorization của request tới restv2.fireant.vn.
+    # Rỗng hoặc fundamentals_provider != "fireant" thì lùi về vnstock.
+    fireant_token: str = ""
     historical_sync_cron: str = "0 18 * * 1-5"  # 18:00 giờ VN, T2-T6 (sau giờ đóng cửa HOSE)
     realtime_poll_interval_seconds: int = 60
     realtime_quote_retention_days: int = 30

@@ -13,7 +13,7 @@ import type {
   PredictionResult,
   PricePoint,
   ScoreResult,
-  StockSummary,
+  StockListResponse,
   SyncResult,
   TransactionOut,
   WatchlistOut,
@@ -35,8 +35,14 @@ function authHeaders(accessToken: string): HeadersInit {
 }
 
 export const api = {
-  listStocks: (q?: string) =>
-    request<StockSummary[]>(`/api/stocks${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  listStocks: (params?: { q?: string; exchange?: string; limit?: number; offset?: number }) => {
+    const sp = new URLSearchParams();
+    if (params?.q) sp.set("q", params.q);
+    if (params?.exchange) sp.set("exchange", params.exchange);
+    sp.set("limit", String(params?.limit ?? 50));
+    sp.set("offset", String(params?.offset ?? 0));
+    return request<StockListResponse>(`/api/stocks?${sp.toString()}`);
+  },
 
   syncStock: (symbol: string, years = 5) =>
     request<SyncResult>(`/api/stocks/${symbol}/sync?years=${years}`, { method: "POST" }),

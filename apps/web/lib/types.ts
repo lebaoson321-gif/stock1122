@@ -1,14 +1,22 @@
 // Mirror của app/schemas/*.py bên backend (apps/api). Giữ tên field khớp
 // 1-1 với JSON response để khỏi phải viết lớp map riêng.
 
+export type ExchangeCode = "HOSE" | "HNX" | "UPCOM";
+
 export interface StockSummary {
   symbol: string;
   company_name: string;
   sector: string;
+  exchange: ExchangeCode;
   /** Qua services/pricing.py — ưu tiên giá khớp trong phiên. */
   current_price: number | null;
   price_source: string | null;
   change_pct: number | null;
+}
+
+export interface StockListResponse {
+  items: StockSummary[];
+  total: number;
 }
 
 export interface PricePoint {

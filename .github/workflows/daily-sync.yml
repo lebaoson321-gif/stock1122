@@ -76,8 +76,8 @@ jobs:
             echo "Nguồn: danh sách HOSE đầy đủ."
           else
             echo "Nguồn: bảng stocks (danh sách HOSE không lấy được hoặc SOURCE=db)."
-            curl -fsS --max-time 120 "$API_BASE_URL/api/stocks" \
-              | jq -r '.[].symbol' > symbols.txt
+            curl -fsS --max-time 120 "$API_BASE_URL/api/stocks?limit=100000" \
+              | jq -r '.items[].symbol' > symbols.txt
           fi
           echo "Sẽ đồng bộ $(wc -l < symbols.txt) mã."
         env:

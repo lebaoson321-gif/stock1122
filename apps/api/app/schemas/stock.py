@@ -10,6 +10,7 @@ class StockSummary(BaseModel):
     symbol: str
     company_name: str
     sector: str
+    exchange: str  # "HOSE" | "HNX" | "UPCOM"
     # Giá lấy qua services/pricing.py (ưu tiên giá khớp trong phiên) —
     # KHÔNG đọc thẳng price_history, để mọi trang hiện cùng một giá.
     current_price: Optional[float] = None
@@ -17,9 +18,15 @@ class StockSummary(BaseModel):
     change_pct: Optional[float] = None
 
 
-class HoseSymbol(BaseModel):
+class StockListResponse(BaseModel):
+    items: list[StockSummary]
+    total: int
+
+
+class SymbolOut(BaseModel):
     symbol: str
     company_name: str
+    exchange: str  # "HOSE" | "HNX" | "UPCOM"
 
 
 class PricePoint(BaseModel):

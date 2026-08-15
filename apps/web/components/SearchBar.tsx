@@ -18,8 +18,8 @@ export default function SearchBar() {
     }
     const timeout = setTimeout(() => {
       api
-        .listStocks(query)
-        .then(setResults)
+        .listStocks({ q: query, limit: 20 })
+        .then((res) => setResults(res.items))
         .catch(() => setResults([]));
     }, 250);
     return () => clearTimeout(timeout);

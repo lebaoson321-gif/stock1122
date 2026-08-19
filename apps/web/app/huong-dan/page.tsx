@@ -29,6 +29,56 @@ function Section({
   );
 }
 
+/** Luật giao dịch khác nhau giữa 3 sàn (giờ khớp lệnh liên tục giống
+ *  nhau, khác ở ATO/ATC và biên độ) — xem app/services/market_session.py
+ *  phía backend, đây là bảng tương ứng phía nội dung giải thích. */
+function ExchangeRulesTable() {
+  const rows = [
+    {
+      exchange: "HOSE",
+      hours: "9:00–11:30, 13:00–14:45 (+ thoả thuận tới 15:00)",
+      atoAtc: "Có ATO (9:00–9:15) và ATC (14:30–14:45)",
+      band: "±7%",
+    },
+    {
+      exchange: "HNX",
+      hours: "9:00–11:30, 13:00–14:45 (+ thoả thuận tới 15:00)",
+      atoAtc: "Có ATC (14:30–14:45), không có ATO",
+      band: "±10%",
+    },
+    {
+      exchange: "UPCoM",
+      hours: "9:00–11:30, 13:00–15:00",
+      atoAtc: "Không có ATO/ATC — chỉ khớp lệnh liên tục",
+      band: "±15%",
+    },
+  ];
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[640px] border-collapse text-sm">
+        <thead>
+          <tr className="border-b border-neutral-800 text-left text-xs uppercase tracking-wide text-neutral-500">
+            <th className="w-[12%] pb-2 pr-3">Sàn</th>
+            <th className="w-[36%] pb-2 pr-3">Giờ giao dịch</th>
+            <th className="w-[36%] pb-2 pr-3">ATO / ATC</th>
+            <th className="w-[16%] pb-2">Biên độ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.exchange} className="border-b border-neutral-800/60 align-top">
+              <td className="py-3 pr-3 font-mono font-semibold text-neutral-100">{r.exchange}</td>
+              <td className="py-3 pr-3 text-neutral-300">{r.hours}</td>
+              <td className="py-3 pr-3 text-neutral-300">{r.atoAtc}</td>
+              <td className="py-3 font-mono text-neutral-300">{r.band}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /** Bảng 4 cột dùng chung cho phần chỉ báo và chỉ số — cột "cạm bẫy" là
  *  cột quan trọng nhất: người mới thường đọc tín hiệu mà bỏ qua bối cảnh
  *  khiến tín hiệu đó sai. */
@@ -170,23 +220,27 @@ export default function GuidePage() {
         </ol>
       </nav>
 
-      <Section id="luat-choi" title="1. Luật chơi trên sàn HOSE">
+      <Section id="luat-choi" title="1. Luật chơi trên thị trường chứng khoán Việt Nam">
         <p>
           <strong className="text-neutral-100">Cổ phiếu</strong> là phần sở hữu một doanh nghiệp. Mua
           cổ phiếu FPT nghĩa là bạn sở hữu một phần rất nhỏ của FPT, và giá trị phần đó lên xuống theo
           kết quả kinh doanh của doanh nghiệp cùng kỳ vọng của thị trường.
         </p>
+        <p>
+          App này theo dõi cổ phiếu trên cả 3 sàn — <strong className="text-neutral-100">HOSE</strong>,{" "}
+          <strong className="text-neutral-100">HNX</strong>, <strong className="text-neutral-100">UPCoM</strong> —
+          và mỗi sàn có giờ giao dịch, quy tắc mở/đóng phiên, và biên độ dao động giá riêng:
+        </p>
+        <ExchangeRulesTable />
         <ul className="ml-5 list-disc space-y-1.5 text-neutral-300">
           <li>
-            <strong className="text-neutral-100">Giờ giao dịch:</strong> 9:00–11:30 và 13:00–15:00 các
-            ngày trong tuần. Ngoài giờ này lệnh không khớp.
+            <strong className="text-neutral-100">Biên độ:</strong> trong một phiên, giá chỉ được dao
+            động tối đa theo % ở bảng trên so với giá tham chiếu. Chạm mức trên gọi là “trần”, mức
+            dưới là “sàn”.
           </li>
           <li>
-            <strong className="text-neutral-100">Lô chẵn:</strong> mua tối thiểu 100 cổ phiếu mỗi lệnh.
-          </li>
-          <li>
-            <strong className="text-neutral-100">Biên độ ±7%:</strong> trong một phiên, giá chỉ được
-            dao động tối đa 7% so với giá tham chiếu. Chạm mức trên gọi là “trần”, mức dưới là “sàn”.
+            <strong className="text-neutral-100">Lô chẵn:</strong> mua tối thiểu 100 cổ phiếu mỗi lệnh
+            trên cả 3 sàn.
           </li>
           <li>
             <strong className="text-neutral-100">T+2:</strong> mua hôm nay thì khoảng 2 ngày làm việc

@@ -70,7 +70,7 @@ jobs:
           # không bao giờ được thử lại. Chạy lại hằng ngày trên danh sách
           # đầy đủ khiến job tự vá: mã hôm nay lỗi mai sẽ thử lại.
           if [ "$SOURCE" = "hose" ] \
-             && curl -fsS --max-time 120 "$API_BASE_URL/api/stocks/hose-symbols" \
+             && curl -fsS --max-time 120 "$API_BASE_URL/api/stocks/symbols?exchange=HOSE" \
                   | jq -r '.[].symbol' > symbols.txt \
              && [ -s symbols.txt ]; then
             echo "Nguồn: danh sách HOSE đầy đủ."

@@ -72,7 +72,10 @@ def list_symbols_endpoint(
 
 @router.get("/hose-symbols", response_model=list[SymbolOut], include_in_schema=False)
 def list_hose_symbols_legacy():
-    """Alias cũ — giữ lại để workflow chưa kịp đổi sang /symbols?exchange=
-    không bị gãy giữa lúc deploy. Có thể xoá sau khi daily-sync.yml (đã
-    đổi sang endpoint mới) chạy ổn định vài lần."""
+    """Alias cũ — cả 2 nhánh của daily-sync.yml giờ đã gọi /symbols và
+    /api/stocks?limit=, không còn nhánh nào gọi endpoint này nữa. Giữ lại
+    làm lưới an toàn cho lúc deploy: nếu một lượt chạy workflow bắt đầu
+    trước khi bản API mới lên, nó vẫn cần route cũ tồn tại tới hết lượt
+    chạy đó. Xoá được sau khi daily-sync.yml chạy xanh vài lần kể từ khi
+    đổi endpoint."""
     return list_symbols_endpoint(exchange="HOSE")

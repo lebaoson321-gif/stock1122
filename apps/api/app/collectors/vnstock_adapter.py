@@ -8,6 +8,7 @@ loại bỏ (chỉ còn KBS/VCI/MSN/FMP) khiến /sync luôn lỗi 502 — đã 
 sang "VCI" (xem legacy/README.md). Version vnstock đã pin cứng trong
 requirements.txt (không dùng >=) chính vì lỗi âm thầm này.
 """
+import logging
 import math
 from datetime import date, datetime, timedelta, timezone
 
@@ -22,6 +23,8 @@ from app.collectors.base import (
     PriceBar,
     PriceBoardQuote,
 )
+
+logger = logging.getLogger(__name__)
 
 # Mã sàn công khai dùng trong app (cột stocks.exchange, filter query...).
 VALID_EXCHANGES = ("HOSE", "HNX", "UPCOM")
@@ -112,6 +115,19 @@ class VnstockAdapter(MarketDataProvider):
                 app_exchange = _RAW_EXCHANGE_TO_APP.get(raw_exchange)
                 if symbol and app_exchange:
                     lookup[str(symbol).upper()] = app_exchange
+
+        if not lookup:
+            # Không cache kết quả rỗng: get_market_data_provider() là
+            # @lru_cache nên self (và cache này) sống suốt đời tiến trình.
+            # Nếu Listing() lỗi/rỗng do mạng trục trặc 1 nhịp, cache rỗng
+            # sẽ khiến MỌI mã HNX/UPCoM bị .get(..., "HOSE") gán nhầm
+            # thành HOSE cho tới khi restart — sai im lặng, khó phát hiện.
+            # Để trống thì lần gọi sau thử lại thay vì kẹt mãi.
+            logger.warning(
+                "vnstock Listing().symbols_by_exchange() trả rỗng/None — "
+                "không cache, sẽ thử lại ở lần gọi _load_exchange_lookup kế tiếp."
+            )
+            return lookup
 
         self._exchange_by_symbol = lookup
         return lookup

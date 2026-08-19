@@ -37,6 +37,25 @@ INDEX_NAMES = {
     "VN30": "VN30",
 }
 
+# Sàn thật của từng chỉ số. VNINDEX/VN30 (HOSE) và HNX đóng khớp liên
+# tục lúc 14:45 như nhau (cùng có ATC 14:30-14:45 rồi "post" thoả thuận
+# tới 15:00 — xem market_session.py); CHỈ UPCOM không có ATO/ATC, khớp
+# liên tục thẳng tới 15:00. Vẫn tra riêng exchange của từng mã (không
+# dùng chung "HOSE" cho cả 4) dù HNX trùng giờ với HOSE — đúng theo
+# nguyên tắc, và không phụ thuộc 2 sàn đó mãi mãi trùng giờ nhau.
+#
+# Dùng để hỏi get_market_status() ĐÚNG sàn của từng mã trong
+# /indices/poll, KHÔNG dùng một cổng chung: nới cổng chung tới 15:00 để
+# không bỏ sót UPCOM sẽ khiến 14:45-15:00 mỗi ngày VNINDEX/VN30/HNX bị
+# poll lại và ghi is_intraday=True đè lên dòng đã chốt, sai tới khi
+# daily-sync chạy buổi tối.
+INDEX_EXCHANGE = {
+    "VNINDEX": "HOSE",
+    "VN30": "HOSE",
+    "HNX": "HNX",
+    "UPCOM": "UPCOM",
+}
+
 
 class MarketStatusResponse(BaseModel):
     state: str
@@ -52,6 +71,14 @@ class MarketStatusResponse(BaseModel):
 
 @router.get("/status", response_model=MarketStatusResponse)
 def market_status(db: Session = Depends(get_db)):
+    # Luôn trả trạng thái của HOSE — hợp lý cho huy hiệu CHUNG của trang,
+    # nhưng có giới hạn thật: UPCOM khớp liên tục tới 15:00 (không có
+    # ATO/ATC) trong khi HOSE đóng lúc 14:45, nên người xem mã UPCOM lúc
+    # 14:50 sẽ thấy huy hiệu "đã đóng cửa" dù mã đó vẫn đang khớp. (HNX
+    # thì trùng giờ với HOSE — cùng có ATC 14:30-14:45 — nên không bị
+    # ảnh hưởng.) Chưa cần sửa (huy hiệu này dùng chung cho cả trang,
+    # không riêng theo mã), nhưng cần biết nếu sau này có huy hiệu theo
+    # từng mã.
     status = get_market_status()
     last_quote_at = db.execute(select(func.max(RealtimeQuote.captured_at))).scalar_one_or_none()
     return MarketStatusResponse(
@@ -110,26 +137,27 @@ def poll_indices(force: bool = Query(False, description="Poll cả khi thị tr�
     `market_indices` với is_intraday=True — tương tự /api/stocks/poll-realtime
     nhưng cho chỉ số thay vì từng mã cổ phiếu.
 
-    Ngoài giờ khớp lệnh thì chặn ở đây (không dựa vào cron canh đúng giờ),
-    giống hệt /api/stocks/poll-realtime: job bên ngoài (GitHub Actions) có
-    thể chạy trễ so với lịch.
+    Ngoài giờ khớp lệnh thì chặn — nhưng xét THEO TỪNG MÃ bằng
+    INDEX_EXCHANGE, không phải một cổng chung: CHỈ UPCOM khớp liên tục
+    tới 15:00, còn HOSE (VNINDEX/VN30) và HNX đều đóng lúc 14:45.
+    14:45-15:00 mỗi ngày chỉ UPCOM được poll, 3 mã còn lại bị bỏ qua (đã
+    chốt). Không dựa vào cron canh đúng giờ, giống hệt
+    /api/stocks/poll-realtime: job bên ngoài (GitHub Actions) có thể
+    chạy trễ so với lịch.
 
     Dòng "đang chạy" này bị /indices/sync ghi đè bằng số CHỐT chính thức
     (is_intraday=False) khi daily-sync chạy sau giờ đóng cửa — không cần
     dọn dẹp gì thêm ở đây.
     """
-    session = get_market_status()  # không đặt tên `status`: trùng với fastapi.status dùng ở trên
-    if not force and not session.is_open:
-        return IndexPollResult(
-            results=[
-                IndexPollItem(code=code, rows_synced=0, message=f"Bỏ qua: {session.label}.")
-                for code in VALID_INDEX_CODES
-            ]
-        )
-
     provider = get_market_data_provider()
     results = []
     for code in VALID_INDEX_CODES:
+        # không đặt tên `status`: trùng với fastapi.status dùng ở trên
+        session = get_market_status(exchange=INDEX_EXCHANGE[code])
+        if not force and not session.is_open:
+            results.append(IndexPollItem(code=code, rows_synced=0, message=f"Bỏ qua: {session.label}."))
+            continue
+
         try:
             bar = provider.get_index_intraday(code)
         except Exception as e:  # noqa: BLE001 — provider không chính thức, lỗi là chuyện thường

@@ -110,3 +110,22 @@ def sync_stock_history(
 def list_active_symbols(db: Session) -> list[str]:
     rows = db.execute(select(Stock.symbol).where(Stock.is_active.is_(True)).order_by(Stock.symbol)).all()
     return [r[0] for r in rows]
+
+
+def list_active_symbols_by_exchange(db: Session) -> dict[str, list[str]]:
+    """Như list_active_symbols() nhưng gộp theo `Stock.exchange` — CHỈ
+    dùng cho /api/stocks/poll-realtime, để nhóm nào sàn đang đóng thì bỏ
+    qua nhóm đó (HOSE và HNX đóng khớp liên tục lúc 14:45 như nhau, CHỈ
+    UPCOM khớp liên tục thẳng tới 15:00).
+
+    list_active_symbols() ở trên giữ NGUYÊN không đổi kiểu trả về: 2 nơi
+    gọi khác (sync-defaults ở routers/sync.py, job sync hằng ngày ở
+    scheduler.py) không cần biết sàn, đổi kiểu trả về của nó sẽ bắt cả
+    3 nơi cùng đổi theo, trong đó có đường sync giá — không đáng."""
+    rows = db.execute(
+        select(Stock.exchange, Stock.symbol).where(Stock.is_active.is_(True)).order_by(Stock.exchange, Stock.symbol)
+    ).all()
+    grouped: dict[str, list[str]] = {}
+    for exchange, symbol in rows:
+        grouped.setdefault(exchange, []).append(symbol)
+    return grouped

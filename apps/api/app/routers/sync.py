@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.collectors.base import MarketDataProvider
 from app.collectors.factory import get_market_data_provider
-from app.collectors.historical import list_active_symbols, sync_stock_history
+from app.collectors.historical import list_active_symbols_by_exchange, sync_stock_history
 from app.collectors.realtime import poll_and_store_price_board
 from app.db import get_db
 from app.models.sync_log import DataSyncLog
@@ -105,6 +105,15 @@ def poll_realtime(
     phiên (xem services/pricing.py) — ngoài giờ hoặc khi dữ liệu quá cũ
     thì hệ thống tự lùi về giá đóng cửa.
 
+    Gom mã theo `stocks.exchange` (list_active_symbols_by_exchange) và
+    xét trạng thái phiên RIÊNG cho từng sàn: HOSE và HNX đóng khớp liên
+    tục lúc 14:45 như nhau (cùng có ATC rồi "post" thoả thuận tới 15:00
+    — xem market_session.py), CHỈ UPCOM khớp liên tục thẳng tới 15:00.
+    Một cổng chung sẽ sai theo 1 trong 2 hướng — chặn quá sớm bỏ sót 15
+    phút cuối của UPCOM, hoặc nới quá muộn khiến HOSE/HNX bị poll thêm
+    sau khi đã đóng. Cùng lý do với INDEX_EXCHANGE ở routers/market.py,
+    áp cho cổ phiếu.
+
     Gọi bằng job bên ngoài (GitHub Actions, xem
     .github/workflows/intraday-poll.yml) vì scheduler nội bộ không chạy
     được trên Render gói miễn phí.
@@ -113,35 +122,36 @@ def poll_realtime(
     trong một request dễ bị provider từ chối — lô lỗi không làm hỏng lô
     khác.
     """
-    # Ngoài giờ khớp lệnh, bảng giá không đổi — gọi provider chỉ tốn công
-    # và làm tăng nguy cơ bị VCI chặn IP (đã gặp khi đồng bộ hàng loạt).
-    # Job bên ngoài có thể chạy trễ so với lịch nên chặn ở đây, không dựa
-    # vào cron canh đúng giờ.
-    session = get_market_status()  # không đặt tên `status`: trùng với fastapi.status dùng ở trên
-    if not force and not session.is_open:
-        return PollResult(
-            symbols_requested=0,
-            rows_synced=0,
-            failed_batches=0,
-            message=f"Bỏ qua: {session.label}. Dùng ?force=true nếu vẫn muốn poll.",
-        )
-
     provider = get_market_data_provider()
-    symbols = list_active_symbols(db)
+    by_exchange = list_active_symbols_by_exchange(db)
     started_at = datetime.now(timezone.utc)
 
     total_rows = 0
     failed_batches = 0
+    symbols_requested = 0
+    skipped: list[str] = []
     errors: list[str] = []
-    for start in range(0, len(symbols), batch_size):
-        batch = symbols[start : start + batch_size]
-        try:
-            total_rows += poll_and_store_price_board(db, provider, batch)
-        except Exception as e:  # noqa: BLE001 — 1 lô lỗi không dừng các lô còn lại
-            db.rollback()
-            failed_batches += 1
-            if len(errors) < 3:  # giữ thông báo ngắn, đủ để chẩn đoán
-                errors.append(f"{batch[0]}..{batch[-1]}: {e}")
+
+    for exchange, symbols in by_exchange.items():
+        # Ngoài giờ khớp lệnh CỦA SÀN ĐÓ, bảng giá không đổi — gọi
+        # provider chỉ tốn công và làm tăng nguy cơ bị VCI chặn IP (đã
+        # gặp khi đồng bộ hàng loạt). Job bên ngoài có thể chạy trễ so
+        # với lịch nên chặn ở đây, không dựa vào cron canh đúng giờ.
+        session = get_market_status(exchange=exchange)  # không đặt tên `status`: trùng với fastapi.status dùng ở trên
+        if not force and not session.is_open:
+            skipped.append(f"{exchange} ({session.label})")
+            continue
+
+        symbols_requested += len(symbols)
+        for start in range(0, len(symbols), batch_size):
+            batch = symbols[start : start + batch_size]
+            try:
+                total_rows += poll_and_store_price_board(db, provider, batch)
+            except Exception as e:  # noqa: BLE001 — 1 lô lỗi không dừng các lô còn lại
+                db.rollback()
+                failed_batches += 1
+                if len(errors) < 3:  # giữ thông báo ngắn, đủ để chẩn đoán
+                    errors.append(f"{batch[0]}..{batch[-1]}: {e}")
 
     db.add(
         DataSyncLog(
@@ -156,11 +166,18 @@ def poll_realtime(
     )
     db.commit()
 
+    if not by_exchange:
+        message = "Không có mã nào trong DB — đồng bộ giá lịch sử trước."
+    elif symbols_requested == 0:
+        message = f"Bỏ qua: {', '.join(skipped)}. Dùng ?force=true nếu vẫn muốn poll."
+    else:
+        message = f"Đã ghi {total_rows} bản ghi giá khớp cho {symbols_requested} mã."
+        if skipped:
+            message += f" Bỏ qua: {', '.join(skipped)}."
+
     return PollResult(
-        symbols_requested=len(symbols),
+        symbols_requested=symbols_requested,
         rows_synced=total_rows,
         failed_batches=failed_batches,
-        message="Không có mã nào trong DB — đồng bộ giá lịch sử trước."
-        if not symbols
-        else f"Đã ghi {total_rows} bản ghi giá khớp.",
+        message=message,
     )

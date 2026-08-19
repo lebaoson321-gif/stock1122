@@ -28,11 +28,12 @@ from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import text
 
 from app.collectors.factory import get_market_data_provider
-from app.collectors.historical import list_active_symbols, sync_stock_history
+from app.collectors.historical import list_active_symbols, list_active_symbols_by_exchange, sync_stock_history
 from app.collectors.realtime import poll_and_store_price_board
 from app.config import get_settings
 from app.db import SessionLocal, engine
 from app.models.sync_log import DataSyncLog
+from app.services.market_session import get_market_status
 
 settings = get_settings()
 
@@ -111,7 +112,15 @@ def _is_vn_trading_hours(now: datetime) -> bool:
 
 def poll_realtime() -> None:
     """Job định kỳ: poll giá khớp lệnh cho tất cả mã active, chỉ trong
-    giờ giao dịch — ngoài giờ gọi cũng không có dữ liệu mới, chỉ tốn quota."""
+    giờ giao dịch — ngoài giờ gọi cũng không có dữ liệu mới, chỉ tốn quota.
+
+    _is_vn_trading_hours() ở trên chỉ là cổng THÔ 9:00-15:00 (đủ rộng để
+    phủ cả 3 sàn, tránh mở DB session/lock ngoài giờ đó hoàn toàn). Cổng
+    THẬT xét RIÊNG từng sàn bằng get_market_status(exchange=...) bên
+    trong — HOSE và HNX đóng khớp liên tục lúc 14:45 như nhau, CHỈ UPCOM
+    khớp liên tục tới 15:00; một cổng chung sẽ poll nhầm HOSE/HNX sau
+    14:45 hoặc bỏ sót UPCOM tới 15:00. Cùng lý do với INDEX_EXCHANGE ở
+    routers/market.py."""
     started_at = datetime.now(timezone.utc)
     if not _is_vn_trading_hours(started_at):
         return
@@ -131,19 +140,23 @@ def poll_realtime() -> None:
             return
 
         provider = get_market_data_provider()
-        symbols = list_active_symbols(db)
-        try:
-            rows = poll_and_store_price_board(db, provider, symbols)
-            _log_sync(
-                db, stock_id=None, sync_type="realtime", status="success" if rows else "no_data",
-                rows_synced=rows, error_message=None, started_at=started_at,
-            )
-        except Exception as e:
-            db.rollback()
-            _log_sync(
-                db, stock_id=None, sync_type="realtime", status="provider_error",
-                rows_synced=0, error_message=str(e), started_at=started_at,
-            )
+        by_exchange = list_active_symbols_by_exchange(db)
+        total_rows = 0
+        errors: list[str] = []
+        for exchange, symbols in by_exchange.items():
+            if not get_market_status(started_at, exchange=exchange).is_open:
+                continue
+            try:
+                total_rows += poll_and_store_price_board(db, provider, symbols)
+            except Exception as e:  # noqa: BLE001 — 1 sàn lỗi không chặn sàn còn lại
+                db.rollback()
+                errors.append(f"{exchange}: {e}")
+
+        _log_sync(
+            db, stock_id=None, sync_type="realtime",
+            status="success" if total_rows else ("provider_error" if errors else "no_data"),
+            rows_synced=total_rows, error_message="; ".join(errors) or None, started_at=started_at,
+        )
     finally:
         db.close()
 

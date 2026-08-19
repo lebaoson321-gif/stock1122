@@ -161,14 +161,22 @@ class VnstockAdapter(MarketDataProvider):
         self._exchange_lookup_failed_at = None
         return lookup
 
-    def get_price_history(self, symbol: str, years: int) -> list[PriceBar]:
+    def get_price_history(self, symbol: str, years: int, start_date: date | None = None) -> list[PriceBar]:
         from vnstock import Vnstock  # import trong hàm: chỉ tải vnstock khi thực sự cần
 
         end_date = datetime.now().strftime("%Y-%m-%d")
-        start_date = (datetime.now() - timedelta(days=365 * years)).strftime("%Y-%m-%d")
+        # start/end đã là 2 tham số string "YYYY-MM-DD" dùng thẳng cho
+        # stock.quote.history() từ trước — start_date chỉ đổi cách TÍNH
+        # ra chuỗi bắt đầu, không phải tham số vnstock mới, không có gì
+        # phải đoán tên/kiểu dữ liệu ở đây.
+        start_date_str = (
+            start_date.strftime("%Y-%m-%d")
+            if start_date is not None
+            else (datetime.now() - timedelta(days=365 * years)).strftime("%Y-%m-%d")
+        )
 
         stock = Vnstock().stock(symbol=symbol, source="VCI")
-        raw = stock.quote.history(start=start_date, end=end_date, interval="1D")
+        raw = stock.quote.history(start=start_date_str, end=end_date, interval="1D")
         if raw is None or raw.empty:
             return []
 

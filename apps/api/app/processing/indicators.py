@@ -5,9 +5,14 @@ MA/RSI/MACD port từ legacy/backend/app/indicators.py (đã test kỹ với d�
 liệu giả lập ở bản MVP trước) — bổ sung EMA12/26 độc lập và Bollinger
 Bands theo yêu cầu nền tảng mới.
 
-`recompute_indicators()` tính lại TOÀN BỘ chuỗi từ price_history rồi
-upsert vào technical_indicators — không patch tăng dần (xem docstring
-model TechnicalIndicator để biết lý do: MA200 cần 200 dòng trước đó).
+`recompute_indicators()` luôn ĐỌC toàn bộ chuỗi từ price_history để
+tính (MA200 cần 200 dòng trước đó, không patch tăng dần được ở bước
+đọc) — nhưng chỉ UPSERT toàn bộ chuỗi cho mã CHƯA có dòng nào trong
+technical_indicators (lần đầu). Mã đã có thì chỉ ghi lại
+_TAIL_UPSERT_ROWS dòng cuối, đủ dư để bao trùm khoảng bị ảnh hưởng nếu
+provider sửa lại vài phiên gần đây, mà giảm hẳn khối lượng ghi mỗi lần
+sync (xem docstring model TechnicalIndicator để biết vì sao đọc vẫn
+phải lấy đủ 200+ dòng).
 """
 from datetime import date
 
@@ -88,6 +93,12 @@ _INDICATOR_COLUMNS = [
     "macd", "macd_signal", "macd_hist", "bb_upper", "bb_middle", "bb_lower",
 ]
 
+# Số dòng cuối ghi lại khi mã ĐÃ có technical_indicators — đủ dư để bao
+# trùm khoảng bị ảnh hưởng nếu provider sửa lại vài phiên gần đây (đã
+# thấy trong price_history), còn giảm > 4 lần khối lượng ghi so với ghi
+# lại cả ~250 dòng/năm mỗi lần sync.
+_TAIL_UPSERT_ROWS = 60
+
 
 def _safe_float(value) -> float | None:
     if value is None or (isinstance(value, float) and (np.isnan(value) or np.isinf(value))):
@@ -96,8 +107,9 @@ def _safe_float(value) -> float | None:
 
 
 def recompute_indicators(db: Session, stock_id: int) -> int:
-    """Tính lại toàn bộ chỉ báo kỹ thuật cho 1 mã từ price_history, upsert
-    vào technical_indicators. Trả về số dòng đã ghi."""
+    """Tính lại toàn bộ chỉ báo kỹ thuật cho 1 mã từ price_history; upsert
+    cả chuỗi nếu mã chưa có dòng nào, chỉ upsert _TAIL_UPSERT_ROWS dòng
+    cuối nếu đã có (xem docstring module). Trả về số dòng đã ghi."""
     rows = db.execute(
         select(
             PriceHistory.trade_date, PriceHistory.open, PriceHistory.high,
@@ -114,6 +126,14 @@ def recompute_indicators(db: Session, stock_id: int) -> int:
     for col in ["open", "high", "low", "close"]:
         df[col] = df[col].astype(float)
     df = compute_all_indicators(df)
+
+    has_existing = (
+        db.execute(select(TechnicalIndicator.stock_id).where(TechnicalIndicator.stock_id == stock_id).limit(1))
+        .first()
+        is not None
+    )
+    if has_existing:
+        df = df.tail(_TAIL_UPSERT_ROWS)
 
     records = []
     for _, row in df.iterrows():

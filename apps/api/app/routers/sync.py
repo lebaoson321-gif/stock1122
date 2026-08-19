@@ -20,12 +20,14 @@ router = APIRouter(prefix="/api/stocks", tags=["sync"])
 DEFAULT_WATCHLIST = ["FPT", "VNM", "HPG", "VCB", "VIC", "VHM", "MSN", "MWG", "TCB", "GAS"]
 
 
-def _sync_one(db: Session, provider: MarketDataProvider, symbol: str, years: int) -> SyncResult:
+def _sync_one(
+    db: Session, provider: MarketDataProvider, symbol: str, years: int, refresh_info: bool = False
+) -> SyncResult:
     symbol = symbol.upper()
     started_at = datetime.now(timezone.utc)
 
     try:
-        rows = sync_stock_history(db, provider, symbol, years=years)
+        rows = sync_stock_history(db, provider, symbol, years=years, refresh_info=refresh_info)
     except Exception as e:
         db.rollback()
         db.add(
@@ -53,14 +55,25 @@ def _sync_one(db: Session, provider: MarketDataProvider, symbol: str, years: int
 
 
 @router.post("/{symbol}/sync", response_model=SyncResult)
-def sync_stock(symbol: str, years: int = Query(5, ge=1, le=20), db: Session = Depends(get_db)):
+def sync_stock(
+    symbol: str,
+    years: int = Query(5, ge=1, le=20),
+    refresh_info: bool = Query(
+        False, description="Ép gọi lại provider để làm mới tên công ty/ngành/sàn niêm yết"
+    ),
+    db: Session = Depends(get_db),
+):
     """
     Lấy dữ liệu mới nhất từ HOSE (qua vnstock) và lưu/ghi đè vào database,
     rồi tính lại chỉ báo kỹ thuật + điểm chấm. Gọi endpoint này trước khi
     xem history/analysis lần đầu cho một mã mới.
+
+    Tên công ty/ngành/sàn niêm yết chỉ được lấy lại từ provider khi mã
+    mới, lần trước lấy hụt, hoặc refresh_info=true — bình thường dùng
+    thẳng bản ghi đã có trong `stocks` để đỡ 1 lượt gọi mạng mỗi lần sync.
     """
     provider = get_market_data_provider()
-    result = _sync_one(db, provider, symbol, years)
+    result = _sync_one(db, provider, symbol, years, refresh_info=refresh_info)
     if result.rows_synced == 0:
         code = status.HTTP_502_BAD_GATEWAY if "Lỗi" in result.message else status.HTTP_404_NOT_FOUND
         raise HTTPException(status_code=code, detail=result.message)

@@ -99,7 +99,11 @@ class MarketDataProvider(Protocol):
     """Interface chuẩn hoá — implementation không được để lộ kiểu dữ liệu
     thô (DataFrame, tên cột) của provider cụ thể ra ngoài."""
 
-    def get_price_history(self, symbol: str, years: int) -> list[PriceBar]: ...
+    def get_price_history(self, symbol: str, years: int, start_date: date | None = None) -> list[PriceBar]:
+        """`start_date` truyền vào thì lấy từ ngày đó tới hôm nay, bỏ qua
+        `years` — dùng cho sync tăng dần (mã đã có dữ liệu, chỉ cần vá
+        thêm vài phiên gần nhất) thay vì luôn tải lại cả `years` năm."""
+        ...
 
     def get_company_info(self, symbol: str) -> CompanyInfo: ...
 

@@ -34,7 +34,11 @@ on:
         default: "0"
 
 concurrency:
-  group: daily-sync
+  # CHUNG group với backfill-symbols.yml (không phải "daily-sync" riêng):
+  # cả 2 file cùng tiêu vào trần 20 request/phút của MỘT tiến trình
+  # Render duy nhất (xem vnstock_adapter.py). Chạy chồng nhau là cả hai
+  # cùng dính sys.exit() giữa chừng và mất mã âm thầm.
+  group: vnstock-sync
   cancel-in-progress: false
 
 env:

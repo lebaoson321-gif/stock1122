@@ -1,0 +1,151 @@
+# Backfill lịch sử giá cho mã HNX/UPCoM MỚI mở — chạy tay, chia lượt.
+#
+# Vì sao tách khỏi daily-sync.yml: toàn bộ tối ưu E2/E3/E4 (bỏ gọi
+# get_company_info thừa, chỉ tải phiên thiếu, chỉ ghi đuôi chỉ báo) chỉ
+# có tác dụng với mã ĐÃ CÓ sẵn trong DB — mã hoàn toàn mới vẫn phải trả
+# giá đắt như trước khi tối ưu: gọi get_company_info + tải đủ `years`
+# năm + ghi cả chuỗi chỉ báo. Với ~1200 mã HNX/UPCoM lần đầu mở, đó là
+# 2 lượt gọi vnstock/mã ngay cả sau khi tối ưu — riêng trần 20
+# request/phút của vnstock (xem app/collectors/vnstock_adapter.py) đã
+# ngốn ~2 tiếng cho ~1200 mã, cộng thời gian xử lý thật khoảng 8 tiếng
+# tổng — vượt trần cứng 6 tiếng của 1 lượt chạy GitHub Actions. Vì vậy
+# BẮT BUỘC chia nhiều lượt nhỏ (offset/limit) thay vì chạy 1 lần.
+#
+# Chỉ workflow_dispatch — đây là việc backfill MỘT LẦN cho mã mới, không
+# phải việc định kỳ (đó là daily-sync.yml, chạy sau khi mã đã có trong
+# DB).
+name: Backfill mã HNX/UPCoM mới
+
+on:
+  workflow_dispatch:
+    inputs:
+      exchange:
+        description: "Sàn cần backfill — chạy riêng từng sàn để mỗi lượt còn nằm trong trần 6 tiếng"
+        type: choice
+        options: ["HNX", "UPCOM"]
+      offset:
+        description: "Số mã bỏ qua từ đầu danh sách (danh sách sắp theo alphabet, xem /api/stocks/symbols)"
+        default: "0"
+      limit:
+        description: "Số mã xử lý trong lượt này"
+        default: "300"
+      years:
+        description: "Số năm dữ liệu lấy về mỗi mã"
+        default: "1"
+      delay:
+        description: >-
+          Nghỉ bao nhiêu giây giữa 2 mã. vnstock đã tự giới hạn 20
+          request/phút phía client rồi (xem vnstock_adapter.py) — sleep
+          thêm không giúp né chặn IP, chỉ tốn thời gian job. Mặc định 0;
+          chỉnh tay khi provider siết thêm giới hạn.
+        default: "0"
+
+# CHUNG group với daily-sync.yml (không phải group riêng): cả 2 file
+# cùng tiêu vào trần 20 request/phút của MỘT tiến trình Render duy nhất
+# (xem vnstock_adapter.py). Chạy chồng nhau là cả hai cùng dính
+# sys.exit() giữa chừng và mất mã âm thầm. cancel-in-progress: false để
+# lượt sau tự xếp hàng đợi lượt trước thay vì huỷ ngang.
+concurrency:
+  group: vnstock-sync
+  cancel-in-progress: false
+
+env:
+  API_BASE_URL: https://stock1122.onrender.com
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    # Dưới trần cứng 360 phút của GitHub Actions một chút, để job tự kết
+    # thúc gọn (in tổng kết, upload artifact) thay vì bị giết ngang giữa
+    # chừng không còn gì để xem lại.
+    timeout-minutes: 350
+    steps:
+      - name: Đánh thức backend (Render free tier ngủ sau 15 phút)
+        run: |
+          for i in $(seq 1 10); do
+            if curl -fsS --max-time 120 "$API_BASE_URL/api/health" > /dev/null; then
+              echo "Backend đã sẵn sàng (lần thử $i)."
+              exit 0
+            fi
+            echo "Chưa dậy, thử lại sau 15s (lần $i/10)..."
+            sleep 15
+          done
+          echo "::error::Backend không phản hồi sau 10 lần thử."
+          exit 1
+
+      - name: Lấy danh sách mã cần backfill (cắt lát theo offset/limit)
+        env:
+          EXCHANGE: ${{ inputs.exchange }}
+          OFFSET: ${{ inputs.offset || '0' }}
+          LIMIT: ${{ inputs.limit || '300' }}
+        run: |
+          curl -fsS --max-time 120 "$API_BASE_URL/api/stocks/symbols?exchange=$EXCHANGE" \
+            | jq -r '.[].symbol' > all_symbols.txt
+          total=$(wc -l < all_symbols.txt)
+
+          tail -n +"$((OFFSET + 1))" all_symbols.txt | head -n "$LIMIT" > symbols.txt
+          n=$(wc -l < symbols.txt)
+
+          if [ "$n" -eq 0 ]; then
+            echo "::error::Không còn mã nào ở offset=$OFFSET (tổng $EXCHANGE: $total mã) — lượt trước có lẽ đã xử lý hết."
+            exit 1
+          fi
+
+          first=$(head -n1 symbols.txt)
+          last=$(tail -n1 symbols.txt)
+          echo "Lượt này xử lý $n mã, từ $first tới $last (offset=$OFFSET, tổng $EXCHANGE: $total mã)."
+
+      - name: Backfill từng mã
+        env:
+          YEARS: ${{ inputs.years || '1' }}
+          DELAY: ${{ inputs.delay || '0' }}
+        run: |
+          total=$(wc -l < symbols.txt)
+          ok=0; failed=0; i=0
+          : > failures.txt
+          while read -r symbol; do
+            i=$((i + 1))
+            if curl -fsS --max-time 180 -X POST \
+                 "$API_BASE_URL/api/stocks/$symbol/sync?years=$YEARS" > /dev/null; then
+              ok=$((ok + 1))
+              echo "[$i/$total] $symbol OK"
+            else
+              failed=$((failed + 1))
+              echo "$symbol" >> failures.txt
+              echo "[$i/$total] $symbol LỖI"
+            fi
+            [ "$DELAY" != "0" ] && sleep "$DELAY"
+          done < symbols.txt
+
+          {
+            echo "## Kết quả backfill ${{ inputs.exchange }} (offset=${{ inputs.offset || '0' }}, limit=${{ inputs.limit || '300' }})"
+            echo ""
+            echo "- Thành công: **$ok** / $total"
+            echo "- Lỗi: **$failed**"
+            if [ "$failed" -gt 0 ]; then
+              echo ""
+              echo "<details><summary>Mã bị lỗi (xem thêm trong artifact failures.txt)</summary>"
+              echo ""
+              echo '```'
+              cat failures.txt
+              echo '```'
+              echo ""
+              echo "</details>"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Chỉ báo hỏng cả lượt khi KHÔNG mã nào backfill được — vài mã
+          # lỗi lẻ tẻ (mã mới niêm yết, tạm ngừng giao dịch) là bình thường.
+          if [ "$ok" -eq 0 ]; then
+            echo "::error::Không mã nào backfill được."
+            exit 1
+          fi
+
+      - name: Lưu danh sách mã lỗi (nếu có) để chạy lại riêng
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backfill-failures-${{ inputs.exchange }}-offset${{ inputs.offset || '0' }}
+          path: failures.txt
+          if-no-files-found: ignore
+          retention-days: 14

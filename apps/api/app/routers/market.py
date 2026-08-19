@@ -18,7 +18,14 @@ from app.collectors.vnstock_adapter import VALID_INDEX_CODES
 from app.db import get_db
 from app.models.market_index import MarketIndex
 from app.models.realtime import RealtimeQuote
-from app.schemas.market import IndexBarOut, IndexQuote, IndexSyncItem, IndexSyncResult
+from app.schemas.market import (
+    IndexBarOut,
+    IndexPollItem,
+    IndexPollResult,
+    IndexQuote,
+    IndexSyncItem,
+    IndexSyncResult,
+)
 from app.services.market_session import get_market_status
 
 router = APIRouter(prefix="/api/market", tags=["market"])
@@ -76,9 +83,13 @@ def sync_indices(years: int = Query(1, ge=1, le=20), db: Session = Depends(get_d
             continue
 
         for bar in bars:
+            # is_intraday=False LUÔN được ghi ở đây, kể cả dòng của hôm
+            # nay: đây là số CHỐT chính thức, ghi đè lên dòng "đang chạy"
+            # mà /indices/poll để lại lúc trong phiên. Thiếu dòng này thì
+            # dòng của hôm nay mãi mãi mang nhãn "đang giao dịch".
             values = {
                 "open": bar.open, "high": bar.high, "low": bar.low,
-                "close": bar.close, "volume": bar.volume,
+                "close": bar.close, "volume": bar.volume, "is_intraday": False,
             }
             stmt = (
                 insert(MarketIndex)
@@ -90,6 +101,59 @@ def sync_indices(years: int = Query(1, ge=1, le=20), db: Session = Depends(get_d
         results.append(IndexSyncItem(code=code, rows_synced=len(bars), message="Đồng bộ thành công"))
 
     return IndexSyncResult(results=results)
+
+
+@router.post("/indices/poll", response_model=IndexPollResult)
+def poll_indices(force: bool = Query(False, description="Poll cả khi thị trường đang đóng"), db: Session = Depends(get_db)):
+    """
+    Poll giá trị đang chạy giữa phiên của 4 chỉ số thị trường, ghi vào
+    `market_indices` với is_intraday=True — tương tự /api/stocks/poll-realtime
+    nhưng cho chỉ số thay vì từng mã cổ phiếu.
+
+    Ngoài giờ khớp lệnh thì chặn ở đây (không dựa vào cron canh đúng giờ),
+    giống hệt /api/stocks/poll-realtime: job bên ngoài (GitHub Actions) có
+    thể chạy trễ so với lịch.
+
+    Dòng "đang chạy" này bị /indices/sync ghi đè bằng số CHỐT chính thức
+    (is_intraday=False) khi daily-sync chạy sau giờ đóng cửa — không cần
+    dọn dẹp gì thêm ở đây.
+    """
+    session = get_market_status()  # không đặt tên `status`: trùng với fastapi.status dùng ở trên
+    if not force and not session.is_open:
+        return IndexPollResult(
+            results=[
+                IndexPollItem(code=code, rows_synced=0, message=f"Bỏ qua: {session.label}.")
+                for code in VALID_INDEX_CODES
+            ]
+        )
+
+    provider = get_market_data_provider()
+    results = []
+    for code in VALID_INDEX_CODES:
+        try:
+            bar = provider.get_index_intraday(code)
+        except Exception as e:  # noqa: BLE001 — provider không chính thức, lỗi là chuyện thường
+            results.append(IndexPollItem(code=code, rows_synced=0, message=f"Lỗi khi lấy dữ liệu: {e}"))
+            continue
+
+        if bar is None:
+            results.append(IndexPollItem(code=code, rows_synced=0, message="Không có nến nào của hôm nay"))
+            continue
+
+        values = {
+            "open": bar.open, "high": bar.high, "low": bar.low,
+            "close": bar.close, "volume": bar.volume, "is_intraday": True,
+        }
+        stmt = (
+            insert(MarketIndex)
+            .values(code=code, trade_date=bar.trade_date, **values)
+            .on_conflict_do_update(index_elements=["code", "trade_date"], set_=values)
+        )
+        db.execute(stmt)
+        db.commit()
+        results.append(IndexPollItem(code=code, rows_synced=1, message="Đã cập nhật giá đang chạy"))
+
+    return IndexPollResult(results=results)
 
 
 @router.get("/indices", response_model=list[IndexQuote])
@@ -129,6 +193,7 @@ def get_indices(db: Session = Depends(get_db)):
             IndexQuote(
                 code=code, name=INDEX_NAMES[code], date=latest.trade_date, close=close,
                 change_point=round(change_point, 2), change_pct=round(change_pct, 2),
+                is_intraday=bool(latest.is_intraday),
             )
         )
     return quotes

@@ -42,3 +42,21 @@ export function vnDate(value: string): string {
   const [year, month, day] = value.split("-");
   return `${day}/${month}/${year}`;
 }
+
+/**
+ * Ngày lịch VN ("YYYY-MM-DD") của một thời điểm cụ thể (VD `server_time`
+ * từ /api/market/status, có kèm offset). Dùng để so sánh với `trade_date`
+ * (vốn đã là chuỗi "YYYY-MM-DD") — KHÔNG được lấy ngày qua
+ * `new Date(value).getDate()`/toLocaleDateString trần vì đó là quy đổi
+ * theo múi giờ máy người dùng, có thể lệch ngày so với giờ VN.
+ */
+export function vnCalendarDate(value: string | Date): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: VN_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(value));
+  const get = (type: string) => parts.find((p) => p.type === type)!.value;
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}

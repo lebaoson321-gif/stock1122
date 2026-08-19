@@ -19,6 +19,7 @@ class IndexQuote(BaseModel):
     close: float
     change_point: float
     change_pct: float
+    is_intraday: bool = False
 
 
 class IndexSyncItem(BaseModel):
@@ -29,3 +30,13 @@ class IndexSyncItem(BaseModel):
 
 class IndexSyncResult(BaseModel):
     results: list[IndexSyncItem]
+
+
+class IndexPollItem(BaseModel):
+    code: str
+    rows_synced: int
+    message: str
+
+
+class IndexPollResult(BaseModel):
+    results: list[IndexPollItem]

@@ -5,7 +5,7 @@ không cần RLS (khác với portfolios/watchlists).
 """
 from datetime import date, datetime
 
-from sqlalchemy import BigInteger, Date, DateTime, Index, Numeric, String, UniqueConstraint, func, text
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, Index, Numeric, String, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -26,4 +26,8 @@ class MarketIndex(Base):
     low: Mapped[float] = mapped_column(Numeric(18, 4), nullable=False)
     close: Mapped[float] = mapped_column(Numeric(18, 4), nullable=False)
     volume: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    """True = giá trị của phiên CHƯA đóng cửa, còn thay đổi (ghi bởi
+    /indices/poll). daily-sync ghi đè False khi chốt số cuối ngày —
+    nếu quên, dòng của hôm nay sẽ mãi mãi mang nhãn "đang giao dịch"."""
+    is_intraday: Mapped[bool | None] = mapped_column(Boolean, nullable=True, server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

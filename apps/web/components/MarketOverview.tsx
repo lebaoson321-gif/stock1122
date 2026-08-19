@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import IndexLineChart from "./IndexLineChart";
 import { api } from "@/lib/api";
 import type { IndexBarOut, IndexCode, IndexQuote } from "@/lib/types";
-import { vnDate } from "@/lib/vnTime";
+import { useMarketSession } from "@/lib/useMarketSession";
+import { vnCalendarDate, vnDate } from "@/lib/vnTime";
 
 type Status = "loading" | "ready" | "error";
 
@@ -20,6 +21,13 @@ export default function MarketOverview() {
   const [expanded, setExpanded] = useState<IndexCode | null>(null);
   const [history, setHistory] = useState<IndexBarOut[]>([]);
   const [historyStatus, setHistoryStatus] = useState<Status>("loading");
+  const marketSession = useMarketSession();
+
+  // Chỉ biết "phiên gần nhất" là hôm nay khi hôm nay đúng là ngày giao
+  // dịch. Cuối tuần/lễ thì idx.date lệch so với server_time là chuyện
+  // bình thường (số của phiên gần nhất trước đó) — không phải dữ liệu cũ.
+  const isStale = (indexDate: string): boolean =>
+    !!marketSession && marketSession.is_trading_day && indexDate !== vnCalendarDate(marketSession.server_time);
 
   useEffect(() => {
     api
@@ -80,6 +88,21 @@ export default function MarketOverview() {
               {idx.change_point >= 0 ? "▲" : "▼"} {Math.abs(idx.change_point).toFixed(2)} (
               {Math.abs(idx.change_pct).toFixed(2)}%)
             </div>
+            {idx.is_intraday ? (
+              <div
+                className="mt-0.5 flex items-center gap-1.5 text-[11px] font-medium text-amber-400"
+                title="Chỉ số đang cập nhật giữa phiên, số còn thay đổi tới khi hết phiên."
+              >
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
+                Đang giao dịch
+              </div>
+            ) : (
+              <div
+                className={`mt-0.5 text-[11px] ${isStale(idx.date) ? "font-medium text-amber-400" : "text-neutral-500"}`}
+              >
+                {isStale(idx.date) ? `Phiên ${vnDate(idx.date)}` : vnDate(idx.date)}
+              </div>
+            )}
           </button>
         ))}
       </div>

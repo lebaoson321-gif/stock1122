@@ -253,6 +253,50 @@ class VnstockAdapter(MarketDataProvider):
             )
         return bars
 
+    def get_index_intraday(self, code: str) -> IndexBar | None:
+        """Gộp nến phút của HÔM NAY thành một IndexBar — dùng cho poll
+        trong phiên. KHÔNG dùng chung với get_index_history: quote.history()
+        với interval="1m" tự tính count_back theo số ngày làm việc trong
+        khoảng [start, end] (xem vnstock/explorer/vci/quote.py), với
+        start=end=hôm nay thì count_back=256 — thừa so với ~110-255 phút
+        đã qua trong ngày nên provider độn thêm nến của (các) phiên trước
+        cho đủ số lượng. Đã kiểm chứng bằng dữ liệu thật (19/8): request
+        start=end=hôm nay trả về nến từ 17/8. Phải tự lọc lại theo ngày
+        sau khi nhận, KHÔNG tin cậy vào start/end lọc hộ.
+        """
+        from vnstock import Vnstock
+
+        code = code.upper()
+        vnstock_symbol = _INDEX_CODE_TO_VNSTOCK_SYMBOL.get(code)
+        if vnstock_symbol is None:
+            raise ValueError(
+                f"Mã chỉ số không hợp lệ: {code}. Chỉ hỗ trợ: {', '.join(VALID_INDEX_CODES)}"
+            )
+
+        today = datetime.now().date()
+        today_str = today.strftime("%Y-%m-%d")
+
+        stock = Vnstock().stock(symbol=vnstock_symbol, source="VCI")
+        raw = stock.quote.history(start=today_str, end=today_str, interval="1m")
+        if raw is None or raw.empty:
+            return None
+
+        df = raw.rename(columns={"time": "date"})
+        df["date"] = pd.to_datetime(df["date"])
+        df = df[df["date"].dt.date == today]
+        if df.empty:
+            return None
+        df = df.sort_values("date")
+
+        return IndexBar(
+            trade_date=today,
+            open=float(df.iloc[0]["open"]),
+            high=float(df["high"].max()),
+            low=float(df["low"].min()),
+            close=float(df.iloc[-1]["close"]),
+            volume=int(df["volume"].sum()),
+        )
+
     def get_company_info(self, symbol: str) -> CompanyInfo:
         from vnstock import Vnstock
 

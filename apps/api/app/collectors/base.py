@@ -115,6 +115,12 @@ class MarketDataProvider(Protocol):
 
     def get_index_history(self, code: str, years: int) -> list[IndexBar]: ...
 
+    def get_index_intraday(self, code: str) -> IndexBar | None:
+        """Gộp các nến phút của HÔM NAY thành một IndexBar — giá trị đang
+        chạy giữa phiên. Trả None khi không có nến nào của hôm nay (ngoài
+        giờ, ngày nghỉ, mã lỗi)."""
+        ...
+
 
 class FundamentalsProvider(Protocol):
     """Interface hẹp hơn MarketDataProvider — chỉ chỉ số tài chính. Nguồn

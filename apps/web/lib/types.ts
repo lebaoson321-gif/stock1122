@@ -223,6 +223,8 @@ export interface IndexQuote {
   close: number;
   change_point: number;
   change_pct: number;
+  /** Phiên chưa đóng cửa — số liệu còn thay đổi. */
+  is_intraday: boolean;
 }
 
 export interface IndexBarOut {

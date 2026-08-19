@@ -40,6 +40,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # vnstock tự giới hạn 20 request/phút. Bước này gọi provider 4 lần
+      # (1 lần/chỉ số VNINDEX, HNX, UPCOM, VN30), cộng với bước poll bảng
+      # giá cổ phiếu bên dưới (1 lần) là 5 lượt/nhịp poll — còn dư nhiều
+      # so với trần 20. Ai thêm chỉ số thứ 5, 6... thì tính lại tổng này.
+      - name: Poll chỉ số thị trường
+        run: |
+          response=$(curl -sS --max-time 300 -w '\n%{http_code}' \
+            -X POST "$API_BASE_URL/api/market/indices/poll")
+          body=$(echo "$response" | head -n -1)
+          code=$(echo "$response" | tail -n 1)
+
+          echo "HTTP $code"
+          echo "$body"
+
+          if [ "$code" != "200" ]; then
+            echo "::error::Poll chỉ số thất bại (HTTP $code)."
+            exit 1
+          fi
       - name: Poll bảng giá
         run: |
           # Render gói miễn phí ngủ sau 15 phút; nhịp poll 10 phút thường

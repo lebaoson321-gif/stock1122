@@ -24,5 +24,14 @@ AGENTS.md
 # Model đã train (dữ liệu dẫn xuất, dataset-specific, không commit)
 services/ai/artifacts/
 
+# Rác sinh ra khi chạy train/backfill hàng loạt trên máy — không phải mã nguồn
+services/ai/results.csv
+services/ai/run_all.sh
+services/ai/run_all.log
+services/ai/resume_all.sh
+services/ai/resume_all.log
+services/ai/symbols.txt
+services/ai/symbols_remaining.txt
+
 # Editor / OS
 .DS_Store

@@ -23,9 +23,15 @@ from app.collectors.base import (
     PriceBoardQuote,
 )
 
-# vnstock trả cột "exchange" (đổi tên từ "board" của VCI) với các giá trị
-# đã gặp thực tế là "HOSE" hoặc "HSX" tuỳ phiên bản API — chấp nhận cả 2.
-_HOSE_EXCHANGE_ALIASES = {"HOSE", "HSX"}
+# Mã sàn công khai dùng trong app (cột stocks.exchange, filter query...).
+VALID_EXCHANGES = ("HOSE", "HNX", "UPCOM")
+
+# Giá trị THẬT của cột "exchange" trong Listing().symbols_by_exchange() —
+# đã kiểm chứng bằng dữ liệu sống: {'UPCOM', 'HSX', 'DELISTED', 'HNX', 'BOND'}
+# cho type=STOCK. "HSX" map về "HOSE" (giữ nguyên tên hiển thị cũ trong
+# app); "DELISTED"/"BOND" không map — mã đã huỷ niêm yết hoặc không phải
+# cổ phiếu thường thì không đưa vào danh sách sync.
+_RAW_EXCHANGE_TO_APP = {"HOSE": "HOSE", "HSX": "HOSE", "HNX": "HNX", "UPCOM": "UPCOM"}
 
 # Mã chỉ số công khai dùng trong app (lưu DB, endpoint, UI).
 VALID_INDEX_CODES = ("VNINDEX", "HNX", "UPCOM", "VN30")
@@ -84,6 +90,32 @@ def _first_present(row: dict, candidates: list[str]):
 
 
 class VnstockAdapter(MarketDataProvider):
+    def __init__(self):
+        # Cache trong đời instance — get_market_data_provider() là
+        # @lru_cache nên đây là 1 lần fetch cho cả tiến trình (Render
+        # instance hoặc 1 lượt chạy GitHub Actions), không phải 1 lần/mã.
+        self._exchange_by_symbol: dict[str, str] | None = None
+
+    def _load_exchange_lookup(self) -> dict[str, str]:
+        if self._exchange_by_symbol is not None:
+            return self._exchange_by_symbol
+
+        from vnstock import Listing
+
+        lookup: dict[str, str] = {}
+        df = Listing(source="VCI").symbols_by_exchange()
+        if df is not None and not df.empty:
+            df = df[df["type"] == "STOCK"]
+            for _, row in df.iterrows():
+                symbol = _first_present(row.to_dict(), ["symbol"])
+                raw_exchange = str(row.get("exchange", "")).upper()
+                app_exchange = _RAW_EXCHANGE_TO_APP.get(raw_exchange)
+                if symbol and app_exchange:
+                    lookup[str(symbol).upper()] = app_exchange
+
+        self._exchange_by_symbol = lookup
+        return lookup
+
     def get_price_history(self, symbol: str, years: int) -> list[PriceBar]:
         from vnstock import Vnstock  # import trong hàm: chỉ tải vnstock khi thực sự cần
 
@@ -152,19 +184,23 @@ class VnstockAdapter(MarketDataProvider):
     def get_company_info(self, symbol: str) -> CompanyInfo:
         from vnstock import Vnstock
 
+        exchange = self._load_exchange_lookup().get(symbol.upper(), "HOSE")
+
         stock = Vnstock().stock(symbol=symbol, source="VCI")
         try:
             overview = stock.company.overview()
             if overview is None or overview.empty:
-                return CompanyInfo(symbol=symbol, company_name=symbol, sector="")
+                return CompanyInfo(symbol=symbol, company_name=symbol, sector="", exchange=exchange)
             row = overview.iloc[0]
             company_name = row.get("organ_short_name") or row.get("organ_name") or symbol
             sector = row.get("sector") or ""
-            return CompanyInfo(symbol=symbol, company_name=str(company_name), sector=str(sector))
+            return CompanyInfo(
+                symbol=symbol, company_name=str(company_name), sector=str(sector), exchange=exchange
+            )
         except Exception:
             # Nếu API thay đổi hoặc lỗi, không chặn luồng chính (sync giá
             # vẫn nên tiếp tục dù không lấy được tên công ty/ngành).
-            return CompanyInfo(symbol=symbol, company_name=symbol, sector="")
+            return CompanyInfo(symbol=symbol, company_name=symbol, sector="", exchange=exchange)
 
     def get_price_board(self, symbols: list[str]) -> list[PriceBoardQuote]:
         from vnstock.api.trading import Trading  # nhẹ hơn Vnstock().stock() — không
@@ -217,25 +253,32 @@ class VnstockAdapter(MarketDataProvider):
             )
         return quotes
 
-    def list_hose_symbols(self) -> list[ListedSymbol]:
+    def list_symbols(self, exchanges: list[str]) -> list[ListedSymbol]:
         from vnstock import Listing
+
+        requested = {e.upper() for e in exchanges}
+        invalid = requested - set(VALID_EXCHANGES)
+        if invalid:
+            raise ValueError(f"Sàn không hợp lệ: {', '.join(sorted(invalid))}. Chỉ hỗ trợ: {', '.join(VALID_EXCHANGES)}")
 
         df = Listing(source="VCI").symbols_by_exchange()
         if df is None or df.empty:
             return []
 
         df = df[df["type"] == "STOCK"]
-        exchange = df["exchange"].astype(str).str.upper()
-        df = df[exchange.isin(_HOSE_EXCHANGE_ALIASES)]
+        raw_exchange = df["exchange"].astype(str).str.upper()
+        app_exchange = raw_exchange.map(_RAW_EXCHANGE_TO_APP)
+        df = df[app_exchange.isin(requested)]
+        app_exchange = app_exchange[app_exchange.isin(requested)]
 
         symbols = []
-        for _, row in df.iterrows():
+        for (_, row), exch in zip(df.iterrows(), app_exchange):
             row_dict = row.to_dict()
             symbol = _first_present(row_dict, ["symbol"])
             if not symbol:
                 continue
             name = _first_present(row_dict, ["organ_name", "organ_short_name"]) or symbol
-            symbols.append(ListedSymbol(symbol=str(symbol), company_name=str(name)))
+            symbols.append(ListedSymbol(symbol=str(symbol), company_name=str(name), exchange=exch))
         return sorted(symbols, key=lambda s: s.symbol)
 
     def get_company_fundamentals(self, symbol: str) -> CompanyFundamentals:

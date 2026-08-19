@@ -29,6 +29,7 @@ class CompanyInfo:
     symbol: str
     company_name: str
     sector: str
+    exchange: str  # "HOSE" | "HNX" | "UPCOM"
 
 
 @dataclass
@@ -57,6 +58,7 @@ class PriceBoardQuote:
 class ListedSymbol:
     symbol: str
     company_name: str
+    exchange: str  # "HOSE" | "HNX" | "UPCOM"
 
 
 @dataclass
@@ -103,7 +105,7 @@ class MarketDataProvider(Protocol):
 
     def get_price_board(self, symbols: list[str]) -> list[PriceBoardQuote]: ...
 
-    def list_hose_symbols(self) -> list[ListedSymbol]: ...
+    def list_symbols(self, exchanges: list[str]) -> list[ListedSymbol]: ...
 
     def get_company_fundamentals(self, symbol: str) -> CompanyFundamentals: ...
 

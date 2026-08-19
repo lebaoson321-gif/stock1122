@@ -93,28 +93,55 @@ def _first_present(row: dict, candidates: list[str]):
 
 
 class VnstockAdapter(MarketDataProvider):
+    # Sau khi _load_exchange_lookup() thất bại (rỗng hoặc ném lỗi), không
+    # thử gọi lại Listing() trong khoảng này — một lượt sync vài trăm mã
+    # gọi get_company_info() liên tiếp, không có cooldown thì Listing()
+    # hỏng 1 lần sẽ bị gọi lại hàng trăm lần trong cùng lượt sync đó.
+    _EXCHANGE_LOOKUP_RETRY_COOLDOWN = timedelta(minutes=5)
+
     def __init__(self):
         # Cache trong đời instance — get_market_data_provider() là
         # @lru_cache nên đây là 1 lần fetch cho cả tiến trình (Render
         # instance hoặc 1 lượt chạy GitHub Actions), không phải 1 lần/mã.
         self._exchange_by_symbol: dict[str, str] | None = None
+        self._exchange_lookup_failed_at: datetime | None = None
 
     def _load_exchange_lookup(self) -> dict[str, str]:
         if self._exchange_by_symbol is not None:
             return self._exchange_by_symbol
 
+        if (
+            self._exchange_lookup_failed_at is not None
+            and datetime.now() - self._exchange_lookup_failed_at < self._EXCHANGE_LOOKUP_RETRY_COOLDOWN
+        ):
+            return {}
+
         from vnstock import Listing
 
         lookup: dict[str, str] = {}
-        df = Listing(source="VCI").symbols_by_exchange()
-        if df is not None and not df.empty:
-            df = df[df["type"] == "STOCK"]
-            for _, row in df.iterrows():
-                symbol = _first_present(row.to_dict(), ["symbol"])
-                raw_exchange = str(row.get("exchange", "")).upper()
-                app_exchange = _RAW_EXCHANGE_TO_APP.get(raw_exchange)
-                if symbol and app_exchange:
-                    lookup[str(symbol).upper()] = app_exchange
+        try:
+            df = Listing(source="VCI").symbols_by_exchange()
+            if df is not None and not df.empty:
+                df = df[df["type"] == "STOCK"]
+                for _, row in df.iterrows():
+                    symbol = _first_present(row.to_dict(), ["symbol"])
+                    raw_exchange = str(row.get("exchange", "")).upper()
+                    app_exchange = _RAW_EXCHANGE_TO_APP.get(raw_exchange)
+                    if symbol and app_exchange:
+                        lookup[str(symbol).upper()] = app_exchange
+        except Exception:  # noqa: BLE001 — provider không chính thức, lỗi là chuyện thường.
+            # get_company_info() gọi hàm này NGOÀI khối try/except của nó
+            # (khối đó chỉ bọc phần overview/sector) — nếu để lỗi thoát ra
+            # đây, /sync của mã đó chết theo dù giá vẫn lấy được bình
+            # thường. Nuốt lỗi, gán exchange mặc định "HOSE" ở call site.
+            logger.warning(
+                "vnstock Listing().symbols_by_exchange() ném lỗi — không chặn "
+                "get_company_info, dùng exchange mặc định HOSE, thử lại sau %s.",
+                self._EXCHANGE_LOOKUP_RETRY_COOLDOWN,
+                exc_info=True,
+            )
+            self._exchange_lookup_failed_at = datetime.now()
+            return {}
 
         if not lookup:
             # Không cache kết quả rỗng: get_market_data_provider() là
@@ -122,14 +149,16 @@ class VnstockAdapter(MarketDataProvider):
             # Nếu Listing() lỗi/rỗng do mạng trục trặc 1 nhịp, cache rỗng
             # sẽ khiến MỌI mã HNX/UPCoM bị .get(..., "HOSE") gán nhầm
             # thành HOSE cho tới khi restart — sai im lặng, khó phát hiện.
-            # Để trống thì lần gọi sau thử lại thay vì kẹt mãi.
+            # Để trống thì lần gọi sau (sau cooldown) thử lại thay vì kẹt mãi.
             logger.warning(
                 "vnstock Listing().symbols_by_exchange() trả rỗng/None — "
-                "không cache, sẽ thử lại ở lần gọi _load_exchange_lookup kế tiếp."
+                "không cache, thử lại sau %s.", self._EXCHANGE_LOOKUP_RETRY_COOLDOWN
             )
+            self._exchange_lookup_failed_at = datetime.now()
             return lookup
 
         self._exchange_by_symbol = lookup
+        self._exchange_lookup_failed_at = None
         return lookup
 
     def get_price_history(self, symbol: str, years: int) -> list[PriceBar]:

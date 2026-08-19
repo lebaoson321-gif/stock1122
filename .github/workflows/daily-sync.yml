@@ -26,8 +26,12 @@ on:
         description: "Số năm dữ liệu lấy về mỗi mã (1 đủ cho cập nhật hằng ngày; đặt 5 khi cần backfill mã mới)"
         default: "1"
       delay:
-        description: "Nghỉ bao nhiêu giây giữa 2 mã (tránh bị VCI chặn IP)"
-        default: "2"
+        description: >-
+          Nghỉ bao nhiêu giây giữa 2 mã. vnstock TỰ giới hạn 20
+          request/phút phía client rồi (xem vnstock_adapter.py) — sleep
+          thêm không giúp né chặn IP, chỉ tốn thời gian job. Mặc định 0;
+          chỉnh tay khi provider siết thêm giới hạn.
+        default: "0"
 
 concurrency:
   group: daily-sync
@@ -86,7 +90,7 @@ jobs:
       - name: Đồng bộ từng mã
         env:
           YEARS: ${{ inputs.years || '1' }}
-          DELAY: ${{ inputs.delay || '2' }}
+          DELAY: ${{ inputs.delay || '0' }}
         run: |
           total=$(wc -l < symbols.txt)
           ok=0; failed=0; i=0
@@ -102,7 +106,7 @@ jobs:
               echo "$symbol" >> failures.txt
               echo "[$i/$total] $symbol LỖI"
             fi
-            sleep "$DELAY"
+            [ "$DELAY" != "0" ] && sleep "$DELAY"
           done < symbols.txt
 
           {

@@ -7,6 +7,25 @@ Lịch sử: ban đầu dùng source="TCBS" cho company info, bị vnstock 4.x
 loại bỏ (chỉ còn KBS/VCI/MSN/FMP) khiến /sync luôn lỗi 502 — đã đổi
 sang "VCI" (xem legacy/README.md). Version vnstock đã pin cứng trong
 requirements.txt (không dùng >=) chính vì lỗi âm thầm này.
+
+RÀNG BUỘC QUAN TRỌNG NHẤT chi phối toàn bộ chiến lược đồng bộ: vnstock
+TỰ giới hạn 20 request/phút phía client cho gói "Khách" (package vnai,
+không phải do VCI/HOSE chặn IP) — vượt quá thì tự gọi sys.exit(), bị
+threadpool của FastAPI/uvicorn bắt lại thành lỗi cho riêng request đó
+(không sập cả tiến trình), nhưng vẫn hỏng lượt sync của mã đó. Đã kiểm
+chứng bằng log thật (2026-08-19, benchmark 10 mã liên tiếp): thông báo
+"Giới hạn: 20 requests/phút · Đã sử dụng: 20/20". Hệ quả trực tiếp:
+  - Không có cách nào "né" giới hạn này bằng cách gọi nhanh hơn hay
+    thêm sleep phía CI (xem .github/workflows/daily-sync.yml) — nó chặn
+    ở phía thư viện, sleep chỉ tốn thời gian job chứ không tăng số
+    request lọt qua được.
+  - Số lệnh gọi vnstock trên mỗi mã (get_company_info + get_price_history
+    trước khi tối ưu, chỉ get_price_history sau khi tối ưu — xem
+    historical.py::sync_stock_history) quyết định trực tiếp bao nhiêu mã
+    đồng bộ được mỗi phút, quan trọng hơn nhiều so với tốc độ xử lý cục
+    bộ (DB, pandas...).
+  - Mọi kế hoạch mở thêm HNX/UPCoM (~1600 mã) phải tính toán dựa trên
+    trần này trước, không phải dựa trên tốc độ mạng hay CPU.
 """
 import logging
 import math

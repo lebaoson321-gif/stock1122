@@ -127,6 +127,16 @@ def poll_realtime() -> None:
 
     db = SessionLocal()
     try:
+        # CẠM BẪY (biết nhưng chấp nhận, xem poll_and_store_price_board()
+        # trong collectors/realtime.py để biết chi tiết + bằng chứng):
+        # khoá này theo TRANSACTION, nhưng poll_and_store_price_board()
+        # gọi commit() sau MỖI lần gọi (mỗi sàn ở vòng lặp dưới) — nên
+        # khoá chỉ thật sự giữ được cho sàn ĐẦU TIÊN, các sàn sau chạy
+        # không có bảo vệ. Chấp nhận được hiện tại vì chỉ còn 1 bộ lập
+        # lịch (cron-job.org, xem intraday-poll.yml) gọi poll qua HTTP —
+        # RUN_SCHEDULER (job này) và HTTP poll không cùng bật cùng lúc
+        # trên Render free tier. Nếu bật lại RUN_SCHEDULER song song với
+        # bộ lập lịch HTTP, khoá KHÔNG đủ để chặn 2 lượt chồng nhau.
         locked = db.execute(
             text("SELECT pg_try_advisory_xact_lock(:key)"),
             {"key": _advisory_lock_key("poll_realtime")},

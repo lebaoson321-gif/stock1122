@@ -1,42 +1,30 @@
 # Poll giá khớp trong phiên, để mua/bán ảo khớp theo giá đang chạy chứ
 # không phải giá đóng cửa hôm trước.
 #
-# GIỚI HẠN THẬT CẦN BIẾT: GitHub Actions không đảm bảo đúng giờ — lịch
-# cron ở đây là "sớm nhất có thể", lúc hệ thống bận có thể trễ vài phút
-# hoặc bỏ qua hẳn một nhịp. Vậy nên độ trễ dữ liệu thực tế dao động
-# khoảng 5-20 phút, KHÔNG đạt mức "trễ dưới 5 phút" của bảng giá chuyên
-# nghiệp. Muốn chặt hơn thì phải chạy tiến trình poll liên tục trên máy
-# chủ trả phí (RUN_SCHEDULER=true, xem apps/api/README.md).
+# TẮT SCHEDULE (2026-08-20): đã chuyển bộ lập lịch chính sang cron-job.org
+# (poll mỗi 10 phút, 02:00-08:00 UTC, T2-T6 — xem 2 job "Stock1122 - Poll
+# bang gia" / "Stock1122 - Poll chi so" trên cron-job.org). KHÔNG chạy
+# song song 2 bộ lập lịch: ở ~32s/lượt cho poll-realtime, một lượt không
+# tự chồng lên lượt kế (cách nhau 10 phút) — NHƯNG hai bộ lập lịch ĐỘC
+# LẬP cùng gọi thì chồng được, và pg_try_advisory_xact_lock ở
+# scheduler.py/routers/sync.py KHÔNG chặn được việc này triệt để (xem
+# chú thích ở _poll_realtime_background trong routers/sync.py — khoá chỉ
+# giữ hết lô poll ĐẦU TIÊN vì poll_and_store_price_board() commit sau mỗi
+# lô). Chồng nhau = 2 bộ × ~10 lượt gọi vnstock trong ~30s = 40
+# request/phút, vượt trần 20/phút của vnstock, sys.exit(), mất mã — đúng
+# sự cố tối 19/8 (xem lịch sử). Giữ file này ở dạng workflow_dispatch để
+# còn đối chiếu thủ công (chạy tay so sánh với cron-job.org), KHÔNG xoá.
+# Nếu cần bật lại schedule, PHẢI tắt job cron-job.org tương ứng trước.
 #
-# TỔNG SỐ LẦN CHẠY/NGÀY LÀM VIỆC: 29 (12 + 4 + 6 + 5 + 2, theo đúng thứ
-# tự các dòng cron dưới đây). Đổi/thêm cron thì tính lại và sửa số này —
-# đây là con số duy nhất đối chiếu với trần rate-limit của vnstock (xem
-# chú thích "Poll chỉ số thị trường" ở bước job bên dưới).
+# GIỚI HẠN THẬT CẦN BIẾT (áp dụng chung cho mọi bộ lập lịch ngoài, kể cả
+# cron-job.org): không đảm bảo đúng giờ tuyệt đối — lúc hệ thống bận có
+# thể trễ vài phút hoặc bỏ qua hẳn một nhịp. Độ trễ dữ liệu thực tế dao
+# động khoảng 5-20 phút, KHÔNG đạt mức "trễ dưới 5 phút" của bảng giá
+# chuyên nghiệp. Muốn chặt hơn thì phải chạy tiến trình poll liên tục
+# trên máy chủ trả phí (RUN_SCHEDULER=true, xem apps/api/README.md).
 name: Poll giá trong phiên
 
 on:
-  schedule:
-    # Chỉ chạy trong lúc thực sự có khớp lệnh (giờ VN = UTC+7):
-    #   phiên sáng  09:00-11:30 VN = 02:00-04:30 UTC
-    #   phiên chiều 13:00-14:45 VN = 06:00-07:45 UTC
-    # Bỏ hẳn khung nghỉ trưa 11:30-13:00 — giá đứng yên, poll chỉ tốn
-    # request và tăng nguy cơ bị VCI chặn. Backend cũng tự chặn lần nữa
-    # theo giờ thật (routers/sync.py), nên cron chạy trễ cũng không gọi
-    # provider ngoài giờ.
-    - cron: "*/10 2-3 * * 1-5"
-    # 04:25 UTC = 11:25 VN là nhịp cuối phiên sáng; 04:30 sẽ rơi đúng
-    # 11:30 tức lúc nghỉ trưa bắt đầu, backend từ chối nên chỉ tốn 1 lần chạy.
-    - cron: "0,10,20,25 4 * * 1-5"
-    - cron: "*/10 6 * * 1-5"
-    - cron: "0,10,20,30,40 7 * * 1-5"
-    # 07:50 và 07:58 UTC = 14:50 và 14:58 VN — HOSE (VNINDEX/VN30) VÀ
-    # HNX đã đóng khớp liên tục lúc 14:45 như nhau nên backend tự bỏ qua
-    # cả 3 mã đó ở đây (INDEX_EXCHANGE trong routers/market.py), không
-    # phải lãng phí. Hai nhịp này CHỈ có tác dụng với UPCOM — sàn DUY
-    # NHẤT khớp liên tục thẳng tới 15:00, không có ATO/ATC — nếu thiếu
-    # thì 15 phút cuối phiên UPCOM, đúng đoạn giá chốt lại, bị bỏ sót
-    # mỗi ngày. Cùng lý do với nhịp 11:25 phía trên.
-    - cron: "50,58 7 * * 1-5"
   workflow_dispatch:
 
 concurrency:
@@ -76,6 +64,13 @@ jobs:
           # Render gói miễn phí ngủ sau 15 phút; nhịp poll 10 phút thường
           # giữ service luôn thức, nhưng nhịp đầu phiên vẫn có thể gặp
           # service đang ngủ nên cho timeout rộng.
+          #
+          # 202 = trong giờ khớp lệnh, endpoint đẩy việc poll vào nền và
+          # trả về ngay (xem routers/sync.py) — KHÔNG có nghĩa là poll đã
+          # xong hay đã thành công, chỉ nghĩa là đã nhận yêu cầu. body ở
+          # nhánh này chưa có rows_synced thật (luôn 0), nên bỏ qua dòng
+          # ghi summary bên dưới cho trường hợp 202 — muốn biết kết quả
+          # thật phải xem data_sync_log hoặc GET /api/market/status.
           response=$(curl -sS --max-time 300 -w '\n%{http_code}' \
             -X POST "$API_BASE_URL/api/stocks/poll-realtime")
           body=$(echo "$response" | head -n -1)
@@ -84,10 +79,15 @@ jobs:
           echo "HTTP $code"
           echo "$body"
 
-          if [ "$code" != "200" ]; then
+          if [ "$code" != "200" ] && [ "$code" != "202" ]; then
             echo "::error::Poll thất bại (HTTP $code)."
             exit 1
           fi
 
-          echo "$body" | jq -r '"Đã ghi \(.rows_synced) bản ghi cho \(.symbols_requested) mã (\(.failed_batches) lô lỗi)."' \
-            >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" = "200" ]; then
+            echo "$body" | jq -r '"Đã ghi \(.rows_synced) bản ghi cho \(.symbols_requested) mã (\(.failed_batches) lô lỗi)."' \
+              >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Đã nhận yêu cầu (202), poll chạy nền — xem data_sync_log để biết kết quả thật." \
+              >> "$GITHUB_STEP_SUMMARY"
+          fi

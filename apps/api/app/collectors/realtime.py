@@ -11,7 +11,22 @@ from app.models.stock import Stock
 def poll_and_store_price_board(db: Session, provider: MarketDataProvider, symbols: list[str]) -> int:
     """Poll giá khớp lệnh cho danh sách mã, upsert vào realtime_quotes.
     Trả về số dòng đã ghi. Raises exception từ provider — caller chịu
-    trách nhiệm bắt và ghi vào data_sync_log."""
+    trách nhiệm bắt và ghi vào data_sync_log.
+
+    CẠM BẪY cho caller nào định bọc pg_try_advisory_xact_lock() quanh
+    NHIỀU lần gọi hàm này (vd. lặp theo lô/theo sàn): db.commit() bên
+    dưới KẾT THÚC transaction hiện tại, mà pg_try_advisory_xact_lock là
+    khoá THEO TRANSACTION — nên khoá tự nhả ngay sau lần gọi đầu tiên,
+    không giữ được cho các lần gọi sau trong cùng 1 lượt poll. Đã xảy ra
+    thật: scheduler.py và routers/sync.py._poll_realtime_background đều
+    có kiểu này — bằng chứng trong data_sync_log (2026-08-20, id 4452
+    chạy 08:01:11, NẰM TRONG cửa sổ chạy 08:00:49-08:01:21 của id 4453,
+    mà KHÔNG bị skipped_locked như lẽ ra phải vậy). Hiện chấp nhận được
+    vì chỉ còn 1 bộ lập lịch gọi poll (cron-job.org) nên 2 lượt không tự
+    chồng nhau (~32s/lượt, cách nhau 10 phút) — nhưng nếu có bộ lập lịch
+    thứ 2 cùng gọi, khoá KHÔNG chặn được va chạm giữa lô 2 trở đi. Sửa
+    triệt để (gộp 1 transaction, chỉ commit cuối) cần thiết kế lại cách
+    1 lô lỗi không kéo sập cả lượt — xem ghi chú ở nơi gọi."""
     if not symbols:
         return 0
 

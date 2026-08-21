@@ -14,6 +14,21 @@
 # Chỉ workflow_dispatch — đây là việc backfill MỘT LẦN cho mã mới, không
 # phải việc định kỳ (đó là daily-sync.yml, chạy sau khi mã đã có trong
 # DB).
+#
+# TỰ TỪ CHỐI CHẠY TRONG GIỜ GIAO DỊCH (thêm 2026-08-21, sự cố thật):
+# concurrency group "vnstock-sync" chỉ xếp hàng được các WORKFLOW KHÁC
+# trong CHÍNH repo này (daily-sync.yml) — nó KHÔNG với tới được
+# cron-job.org, bộ lập lịch BÊN NGOÀI gọi thẳng HTTP vào
+# /api/stocks/poll-realtime mỗi 10 phút trong giờ giao dịch (xem
+# routers/sync.py). Nếu backfill chạy trùng giờ, backfill và poll-realtime
+# cùng ăn chung trần 20 request/phút của vnstock — lần này nạn nhân là GIÁ
+# TRONG PHIÊN (poll hỏng thì giao dịch ảo khớp giá cũ), không chỉ tự
+# backfill mất mã như sự cố 19/8. Suýt xảy ra thật lúc backfill lượt 5
+# (run 32447877775) chạy sát giờ mở cửa phiên chiều. Vì GitHub không tự
+# biết về cron-job.org, job PHẢI tự gác bằng cách hỏi thẳng
+# GET /api/market/status trước khi chạy — xem bước "Từ chối chạy trong
+# giờ giao dịch" bên dưới. Chỉ bỏ qua khi thật sự cần (input force=true),
+# và phải hiểu rõ rủi ro ở trên trước khi bật.
 name: Backfill mã HNX/UPCoM mới
 
 on:
@@ -39,6 +54,14 @@ on:
           thêm không giúp né chặn IP, chỉ tốn thời gian job. Mặc định 0;
           chỉnh tay khi provider siết thêm giới hạn.
         default: "0"
+      force:
+        description: >-
+          Bỏ qua kiểm tra giờ giao dịch, chạy dù thị trường đang mở. CHỈ
+          bật khi hiểu rõ rủi ro: backfill sẽ tranh trần 20 request/phút
+          của vnstock với poll-realtime (cron-job.org gọi mỗi 10 phút
+          trong giờ) — xem chú thích đầu file.
+        type: boolean
+        default: false
 
 # CHUNG group với daily-sync.yml (không phải group riêng): cả 2 file
 # cùng tiêu vào trần 20 request/phút của MỘT tiến trình Render duy nhất
@@ -72,6 +95,16 @@ jobs:
           done
           echo "::error::Backend không phản hồi sau 10 lần thử."
           exit 1
+
+      - name: Từ chối chạy trong giờ giao dịch (trừ khi force=true)
+        if: inputs.force != true
+        run: |
+          is_open=$(curl -fsS --max-time 60 "$API_BASE_URL/api/market/status" | jq -r '.is_open')
+          if [ "$is_open" = "true" ]; then
+            echo "::error::Thị trường đang MỞ (is_open=true) — backfill sẽ tranh trần 20 request/phút của vnstock với poll-realtime (cron-job.org gọi mỗi 10 phút trong giờ), làm hỏng giá trong phiên. Chờ đóng cửa hoặc chạy lại với force=true nếu chắc chắn chấp nhận rủi ro (xem chú thích đầu file)."
+            exit 1
+          fi
+          echo "Thị trường đang đóng (is_open=$is_open) — an toàn để backfill."
 
       - name: Lấy danh sách mã cần backfill (cắt lát theo offset/limit)
         env:
